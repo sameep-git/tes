@@ -1,0 +1,13 @@
+# Environments
+.env
+venv/
+__pycache__/
+*.py[cod]
+scheduler.db
+.vscode/
+.DS_Store
+*.xlsx
+*.pdf
+credentials.json
+token.json
+docs/

@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+sqlalchemy
+pydantic
+pydantic-settings
+fastmcp
+google-genai
+python-dotenv
+apscheduler
+python-jose
+bcrypt
+openpyxl
+ortools
+google-auth
+google-auth-oauthlib
+google-api-python-clientpytest
+httpx
