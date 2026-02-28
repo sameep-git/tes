@@ -235,7 +235,7 @@ def poll_unread_replies() -> list:
                     pass
             
             # Strategy B: Fallback to matching the thread_id from our EmailLog
-            if not prof_id:
+            if prof_id is None:
                 sent_log = db.query(EmailLog).filter(
                     EmailLog.gmail_thread_id == thread_id, 
                     EmailLog.direction == 'sent'
@@ -250,18 +250,35 @@ def poll_unread_replies() -> list:
                     except Exception:
                         pass
             
-            # Strategy C: Desperate fallback to matching the sender's email address
-            if not prof_id:
-                prof = db.query(Professor).filter(Professor.email == sender_email).first()
-                if prof:
-                    prof_id = prof.id
-                    # If we got here, we don't know the exact semester, default to the upcoming Fall for testing
-                    # (In a real app, we'd maybe flag this for admin review or infer from the current date)
-                    semester = "Fall"
-                    year = 2025
+            # If we couldn't definitively identify the professor/semester from the token or thread ID,
+            # throw an error instead of guessing. The admin can manually assign it.
+            if prof_id is None or semester is None or year is None:
+                # Still mark it as read so we don't infinitely process it, but log it as failed.
+                service.users().messages().modify(
+                    userId='me', 
+                    id=msg_id, 
+                    body={'removeLabelIds': ['UNREAD']}
+                ).execute()
+                
+                # Log the failed incoming email so the admin sees it in the dashboard
+                failed_log = EmailLog(
+                    professor_id=None,  # We don't know who it belongs to!
+                    direction='received',
+                    gmail_thread_id=thread_id,
+                    subject=subject,
+                    status='failed_match'
+                )
+                db.add(failed_log)
+                
+                processed_replies.append({
+                    "error": "Failed to match email to a specific professor or semester.",
+                    "subject": subject,
+                    "sender": sender_email
+                })
+                continue
 
             # 3. Save the Preference and Log the Email
-            if prof_id and semester and year:
+            if prof_id is not None and semester and year:
                 # Check if a preference already exists (e.g. they replied twice).
                 # If so, we can overwrite the raw email. The SYSTEM_PLAN says "Latest reply always wins".
                 pref = db.query(Preference).filter(
@@ -280,7 +297,7 @@ def poll_unread_replies() -> list:
                     db.add(pref)
                 else:
                     pref.raw_email = body_text
-                    pref.admin_approved = False # Reset approval since it's a new reply!
+                    pref.admin_approved = False  # Reset approval since it's a new reply!
 
                 # Log the incoming email
                 in_log = EmailLog(
