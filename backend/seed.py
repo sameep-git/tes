@@ -44,10 +44,10 @@ def seed_db():
         TimeSlot(days="MWF", start_time="10:00", end_time="10:50", label="MWF 10:00am"),
         TimeSlot(days="MWF", start_time="11:00", end_time="11:50", label="MWF 11:00am"),
         TimeSlot(days="MWF", start_time="13:00", end_time="13:50", label="MWF 1:00pm"),
-        TimeSlot(days="TTh", start_time="09:30", end_time="10:45", label="TTh 9:30am"),
-        TimeSlot(days="TTh", start_time="11:00", end_time="12:15", label="TTh 11:00am"),
-        TimeSlot(days="TTh", start_time="13:00", end_time="14:15", label="TTh 1:00pm"),
-        TimeSlot(days="TTh", start_time="14:30", end_time="15:45", label="TTh 2:30pm"),
+        TimeSlot(days="TR", start_time="09:30", end_time="10:45", label="TR 9:30am"),
+        TimeSlot(days="TR", start_time="11:00", end_time="12:15", label="TR 11:00am"),
+        TimeSlot(days="TR", start_time="13:00", end_time="14:15", label="TR 1:00pm"),
+        TimeSlot(days="TR", start_time="14:30", end_time="15:45", label="TR 2:30pm"),
     ]
     db.add_all(timeslots)
 

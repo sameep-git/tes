@@ -8,6 +8,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from backend.database import SessionLocal
 from backend.models import Professor, Schedule, Constraint, Preference
+from backend.email import send_preference_email, poll_unread_replies
+from backend.ai import extract_preferences_from_email
 
 # Initialize FastMCP server
 mcp = FastMCP("TES")
@@ -117,6 +119,55 @@ def get_constraints() -> str:
                 "value_json": constraint.value_json
             })
         return json.dumps(constraints_data)
+    finally:
+        db.close()
+
+
+@mcp.tool()
+def trigger_send_preference_email(prof_id: int, semester: str, year: int) -> str:
+    """Send an email to a specific professor asking for their teaching preferences."""
+    result = send_preference_email(prof_id, semester, year)
+    return json.dumps(result)
+
+@mcp.tool()
+def trigger_poll_unread_replies() -> str:
+    """Poll the system email inbox for any unread preference replies and save them to the database."""
+    replies = poll_unread_replies()
+    return json.dumps({"processed_count": len(replies), "replies": replies})
+
+@mcp.tool()
+def extract_and_save_preference_json(pref_id: int) -> str:
+    """
+    Takes an existing Preference record (which must have raw_email text),
+    runs the AI extraction on it to generate structured JSON,
+    and saves the JSON back to the database.
+    """
+    db = SessionLocal()
+    try:
+        pref = db.query(Preference).filter(Preference.id == pref_id).first()
+        if not pref:
+            return json.dumps({"error": f"Preference record {pref_id} not found."})
+        
+        if not str(pref.raw_email):
+            return json.dumps({"error": f"Preference record {pref_id} does not have raw_email text."})
+
+        # Run the AI extraction
+        parsed_obj = extract_preferences_from_email(str(pref.raw_email))
+        
+        # Save it to the database
+        pref.parsed_json = parsed_obj.model_dump()  # type: ignore[assignment]
+        pref.confidence = parsed_obj.confidence_score  # type: ignore[assignment]
+        db.commit()
+
+        return json.dumps({
+            "status": "success",
+            "preference_id": pref.id,
+            "confidence_score": pref.confidence,
+            "parsed_json": pref.parsed_json
+        })
+    except Exception as e:
+        db.rollback()
+        return json.dumps({"error": f"Extraction failed: {str(e)}"})
     finally:
         db.close()
 
