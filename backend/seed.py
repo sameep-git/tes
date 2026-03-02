@@ -17,11 +17,11 @@ def seed_db():
     print("Seeding professors...")
     professors = [
         Professor(name="Dr. Smith", email="smith@university.edu", office="Econ Bldg 101", rank="Tenured", max_sections=3),
-        Professor(name="Dr. Jones", email="jones@university.edu", office="Econ Bldg 102", rank="Tenured", max_sections=2),
+        Professor(name="Dr. Jones", email="jones@university.edu", office="Econ Bldg 102", rank="Tenured", max_sections=3),
         Professor(name="Prof. Doe", email="doe@university.edu", office="Econ Bldg 201", rank="Tenure-Track", max_sections=3),
         Professor(name="Dr. Miller", email="miller@university.edu", office="Econ Bldg 305", rank="Visiting", max_sections=4),
-        Professor(name="Prof. Garcia", email="garcia@university.edu", office="Econ Bldg 110", rank="Adjunct", max_sections=2),
-        Professor(name="Prof. Shah", email="shah@university.edu", office="Lib Giga Lab", rank="Adjunct", max_sections=1),
+        Professor(name="Prof. Garcia", email="garcia@university.edu", office="Econ Bldg 110", rank="Adjunct", max_sections=3),
+        Professor(name="Prof. Shah", email="sameep.shah@tcu.edu", office="Lib Giga Lab", rank="Adjunct", max_sections=2),
     ]
     db.add_all(professors)
 

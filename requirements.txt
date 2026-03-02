@@ -2,6 +2,7 @@ fastapi
 uvicorn
 sqlalchemy
 pydantic
+pydantic[email]
 pydantic-settings
 fastmcp
 google-genai
@@ -13,5 +14,6 @@ openpyxl
 ortools
 google-auth
 google-auth-oauthlib
-google-api-python-clientpytest
+google-api-python-client
+pytest
 httpx

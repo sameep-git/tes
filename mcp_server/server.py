@@ -10,6 +10,7 @@ from backend.database import SessionLocal
 from backend.models import Professor, Schedule, Constraint, Preference, Course
 from backend.email import send_preference_email, poll_unread_replies
 from backend.ai import extract_preferences_from_email
+from backend.solver import run_solver
 
 # Initialize FastMCP server
 mcp = FastMCP("TES")
@@ -200,6 +201,16 @@ def extract_and_save_preference_json(pref_id: int) -> str:
         return json.dumps({"error": f"Extraction failed: {str(e)}"})
     finally:
         db.close()
+
+
+@mcp.tool()
+def trigger_solver(semester: str, year: int) -> str:
+    """
+    Run the Constraint Solver to generate a schedule for the given semester and year.
+    Returns the status and the new Schedule ID if successful.
+    """
+    result = run_solver(semester, year)
+    return json.dumps(result)
 
 
 if __name__ == "__main__":
