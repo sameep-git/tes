@@ -22,9 +22,14 @@ def get_gmail_service(server_mode: bool = False):
                      interactive OAuth flow. Use this for background jobs or
                      headless server contexts where stdin is unavailable.
     """
+    # Resolve absolute paths to keep auth working when executed from other dirs
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    token_path = os.path.join(BASE_DIR, 'token.json')
+    creds_path = os.path.join(BASE_DIR, 'credentials.json')
+
     creds = None
-    if os.path.exists('token.json'):
-        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+    if os.path.exists(token_path):
+        creds = Credentials.from_authorized_user_file(token_path, SCOPES)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
@@ -35,9 +40,9 @@ def get_gmail_service(server_mode: bool = False):
             )
         else:
             flow = InstalledAppFlow.from_client_secrets_file(
-                'credentials.json', SCOPES)
+                creds_path, SCOPES)
             creds = flow.run_local_server(port=0)
-        with open('token.json', 'w') as token:
+        with open(token_path, 'w') as token:
             token.write(creds.to_json())
 
     return build('gmail', 'v1', credentials=creds)
@@ -310,7 +315,7 @@ def poll_unread_replies(server_mode: bool = False) -> list:
                     status='failed_match'
                 )
                 db.add(failed_log)
-                db.flush()  # Write row before touching Gmail
+                db.commit()  # Commit DB changes before mutating Gmail so we don't lose the record on error
 
                 # Mark as read so we don't infinitely process it
                 service.users().messages().modify(
@@ -357,7 +362,7 @@ def poll_unread_replies(server_mode: bool = False) -> list:
                     status='processed'
                 )
                 db.add(in_log)
-                db.flush()  # Persist preference + log before touching Gmail
+                db.commit()  # Persist preference + log before touching Gmail
 
                 # 4. Remove the UNREAD label so we don't process it again
                 service.users().messages().modify(
@@ -373,7 +378,6 @@ def poll_unread_replies(server_mode: bool = False) -> list:
                     "year": year
                 })
         
-        db.commit()
         return processed_replies
 
     except Exception as e:

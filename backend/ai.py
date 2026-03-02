@@ -68,8 +68,8 @@ def extract_preferences_from_email(email_text: str) -> ParsedPreference:
     RULES:
     1. Map their course requests strictly to the Valid Course Codes provided above. Do not invent course codes.
     2. Map their time requests strictly to the Valid TimeSlot Labels provided above.
-    3. If they ask for "Mornings", map that to the 9:00am, 9:30am, 10:00am, or 11:00am timeslots.
-    4. If they ask for "Afternoons", map that to the 1:00pm, 2:30pm timeslots.
+    3. If they ask for "Mornings", interpret that as a preference for earlier-in-the-day time slots and choose the most appropriate labels from the Valid TimeSlot Labels list (do not invent labels).
+    4. If they ask for "Afternoons", interpret that as a preference for later-in-the-day time slots and choose the most appropriate labels from the Valid TimeSlot Labels list (do not invent labels).
     5. If a preference is ambiguous or contradicts the system, add it to `notes_for_admin` and lower the `confidence_score`.
     6. `confidence_score` MUST be a float between 0.0 and 1.0. If you are very certain, use 0.9 or 1.0. If the email is confusing, use 0.5 or lower.
     
