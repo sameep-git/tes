@@ -1,39 +1,41 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Bot, User, Loader2, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 export default function ChatPanel() {
-  const [messages, setMessages] = useState([
+  const [messages, setMessages] = useState<{ role: string; content: string }[]>([
     { role: 'assistant', content: 'Hello Prof. Hawley. The Fall 2025 scheduling cycle is active. How can I help you today?' }
   ]);
   const [input, setInput] = useState('');
   const [isThinking, setIsThinking] = useState(false);
   const [activeTool, setActiveTool] = useState<string | null>(null);
-  
-  const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
+
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTo(0, scrollRef.current.scrollHeight);
-    }
-  }, [messages, isThinking, activeTool]);
+    scrollToBottom();
+  }, [messages, isThinking, activeTool, scrollToBottom]);
 
   const handleSend = async () => {
     if (!input.trim() || isThinking) return;
-    
+
     const userMessage = input;
     setInput('');
-    setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
     setIsThinking(true);
     setActiveTool(null);
 
-    // Create a placeholder for the assistant's streaming response
-    setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+    // Add user message and an empty assistant placeholder in one update
+    setMessages(prev => [...prev, { role: 'user', content: userMessage }, { role: 'assistant', content: '' }]);
 
     try {
       const response = await fetch('http://localhost:8000/api/chat', {
@@ -46,44 +48,51 @@ export default function ChatPanel() {
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      let done = false;
+      let buffer = '';
 
-      while (!done) {
-        const { value, done: readerDone } = await reader.read();
-        done = readerDone;
-        if (value) {
-          const chunk = decoder.decode(value);
-          const lines = chunk.split('\n\n');
-          
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Process complete SSE messages from buffer
+        const parts = buffer.split('\n\n');
+        // Keep the last part as it may be incomplete
+        buffer = parts.pop() || '';
+
+        for (const part of parts) {
+          const lines = part.split('\n');
           for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6));
-                
-                if (data.type === 'tool_call') {
-                  setActiveTool(data.name);
-                } else if (data.type === 'text') {
-                  setActiveTool(null);
-                  setMessages(prev => {
-                    const newMessages = [...prev];
-                    const lastIdx = newMessages.length - 1;
-                    newMessages[lastIdx].content += data.content;
-                    return newMessages;
-                  });
-                } else if (data.type === 'error') {
-                  setActiveTool(null);
-                  setMessages(prev => {
-                    const newMessages = [...prev];
-                    newMessages[newMessages.length - 1].content = `Error: ${data.content}`;
-                    return newMessages;
-                  });
-                } else if (data.type === 'done') {
-                  setIsThinking(false);
-                  setActiveTool(null);
-                }
-              } catch (e) {
-                console.error("Failed to parse SSE line:", line);
+            if (!line.startsWith('data: ')) continue;
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              if (data.type === 'tool_call') {
+                setActiveTool(data.name);
+              } else if (data.type === 'text') {
+                setActiveTool(null);
+                setMessages(prev => {
+                  const updated = [...prev];
+                  const last = updated[updated.length - 1];
+                  if (last.role === 'assistant') {
+                    updated[updated.length - 1] = { ...last, content: last.content + data.content };
+                  }
+                  return updated;
+                });
+              } else if (data.type === 'error') {
+                setActiveTool(null);
+                setMessages(prev => {
+                  const updated = [...prev];
+                  updated[updated.length - 1] = { role: 'assistant', content: `Error: ${data.content}` };
+                  return updated;
+                });
+              } else if (data.type === 'done') {
+                setIsThinking(false);
+                setActiveTool(null);
               }
+            } catch {
+              // Ignore malformed JSON chunks
             }
           }
         }
@@ -91,9 +100,9 @@ export default function ChatPanel() {
     } catch (error) {
       console.error('Chat error:', error);
       setMessages(prev => {
-        const newMessages = [...prev];
-        newMessages[newMessages.length - 1].content = "Connection error. Make sure the FastAPI backend is running.";
-        return newMessages;
+        const updated = [...prev];
+        updated[updated.length - 1] = { role: 'assistant', content: 'Connection error. Make sure the FastAPI backend is running.' };
+        return updated;
       });
     } finally {
       setIsThinking(false);
@@ -102,8 +111,9 @@ export default function ChatPanel() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-white">
-      <div className="p-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Header */}
+      <div className="p-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-2">
           <Bot className="w-5 h-5 text-indigo-600" />
           <h2 className="font-semibold text-gray-800">TES Agent</h2>
@@ -111,18 +121,33 @@ export default function ChatPanel() {
         <span className="flex h-2 w-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]"></span>
       </div>
 
-      <ScrollArea className="flex-1 p-4" viewportRef={scrollRef}>
+      {/* Messages — plain scrollable div instead of ScrollArea to avoid viewport issues */}
+      <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 min-h-0">
         <div className="space-y-6 pb-4">
-          {messages.map((msg, i) => (
-            <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''} ${msg.content === '' ? 'hidden' : ''}`}>
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${msg.role === 'user' ? 'bg-gray-800 text-white' : 'bg-indigo-100 text-indigo-700'}`}>
-                {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+          {messages.map((msg, i) => {
+            // Hide empty assistant placeholders while streaming
+            if (msg.role === 'assistant' && msg.content === '' && i === messages.length - 1 && isThinking) {
+              return null;
+            }
+            if (msg.content === '') return null;
+
+            return (
+              <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${msg.role === 'user' ? 'bg-gray-800 text-white' : 'bg-indigo-100 text-indigo-700'}`}>
+                  {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+                </div>
+                <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${msg.role === 'user' ? 'bg-gray-800 text-white rounded-tr-none' : 'bg-gray-100 text-gray-800 rounded-tl-none'}`}>
+                  {msg.role === 'assistant' ? (
+                    <div className="chat-markdown">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                    </div>
+                  ) : (
+                    <span className="whitespace-pre-wrap">{msg.content}</span>
+                  )}
+                </div>
               </div>
-              <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm whitespace-pre-wrap leading-relaxed ${msg.role === 'user' ? 'bg-gray-800 text-white rounded-tr-none' : 'bg-gray-100 text-gray-800 rounded-tl-none'}`}>
-                {msg.content}
-              </div>
-            </div>
-          ))}
+            );
+          })}
 
           {/* Thinking / Tool Execution Visibility Block */}
           {(isThinking || activeTool) && (
@@ -149,19 +174,23 @@ export default function ChatPanel() {
               </div>
             </div>
           )}
-        </div>
-      </ScrollArea>
 
-      <div className="p-4 border-t border-gray-200 bg-gray-50">
-        <form 
+          {/* Invisible scroll anchor */}
+          <div ref={messagesEndRef} />
+        </div>
+      </div>
+
+      {/* Input — always pinned at bottom */}
+      <div className="p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0">
+        <form
           onSubmit={(e) => { e.preventDefault(); handleSend(); }}
           className="flex flex-col gap-2"
         >
           <div className="flex items-center gap-2">
-            <Input 
+            <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask TES Agent to do something..." 
+              placeholder="Ask TES Agent to do something..."
               className="flex-1 bg-white"
               disabled={isThinking}
             />

@@ -50,3 +50,82 @@ class TimeSlotResponse(TimeSlotBase):
 
     class Config:
         from_attributes = True
+
+
+class ProfessorBrief(BaseModel):
+    id: int
+    name: str
+    email: str
+
+    class Config:
+        from_attributes = True
+
+
+class PreferenceResponse(BaseModel):
+    id: int
+    professor_id: int
+    semester: str
+    year: int
+    raw_email: Optional[str] = None
+    parsed_json: Optional[Dict[str, Any]] = None
+    confidence: Optional[float] = None
+    admin_approved: bool
+    received_at: datetime
+    professor: Optional[ProfessorBrief] = None
+
+    class Config:
+        from_attributes = True
+
+
+class SectionResponse(BaseModel):
+    id: int
+    course_id: int
+    professor_id: Optional[int] = None
+    timeslot_id: Optional[int] = None
+    status: str
+    course_code: Optional[str] = None
+    course_name: Optional[str] = None
+    professor_name: Optional[str] = None
+    timeslot_label: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+    @classmethod
+    def from_orm_with_relations(cls, section):
+        return cls(
+            id=section.id,
+            course_id=section.course_id,
+            professor_id=section.professor_id,
+            timeslot_id=section.timeslot_id,
+            status=section.status,
+            course_code=section.course.code if section.course else None,
+            course_name=section.course.name if section.course else None,
+            professor_name=section.professor.name if section.professor else None,
+            timeslot_label=section.timeslot.label if section.timeslot else None,
+        )
+
+
+class ScheduleResponse(BaseModel):
+    id: int
+    semester: str
+    year: int
+    status: str
+    finalized_at: Optional[datetime] = None
+    sections: List[SectionResponse] = []
+
+    class Config:
+        from_attributes = True
+
+    @classmethod
+    def from_orm_with_relations(cls, schedule):
+        return cls(
+            id=schedule.id,
+            semester=schedule.semester,
+            year=schedule.year,
+            status=schedule.status,
+            finalized_at=schedule.finalized_at,
+            sections=[
+                SectionResponse.from_orm_with_relations(s) for s in schedule.sections
+            ],
+        )
