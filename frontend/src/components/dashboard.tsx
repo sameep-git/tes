@@ -1,12 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { AlertCircle, CheckCircle2, Clock, Loader2 } from 'lucide-react';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from '@/components/ui/dialog';
+import { AlertCircle, CheckCircle2, Clock, Eye, Loader2 } from 'lucide-react';
 import ChatPanel from './chat-panel';
 
 const API = 'http://localhost:8000/api';
@@ -67,6 +70,97 @@ interface Preference {
   professor: { id: number; name: string; email: string } | null;
 }
 
+// ---- Preference Detail Dialog ----
+function PreferenceDetailDialog({
+  pref,
+  onClose,
+}: {
+  pref: Preference | null;
+  onClose: () => void;
+}) {
+  if (!pref) return null;
+
+  const profName = pref.professor?.name ?? `Prof #${pref.professor_id}`;
+  const parsed = pref.parsed_json as Record<string, unknown> | null;
+
+  // Helper to render a preference field row
+  const Field = ({ label, value }: { label: string; value: unknown }) => {
+    if (value === null || value === undefined) return null;
+    if (Array.isArray(value) && value.length === 0) return null;
+    return (
+      <div className="flex gap-3 py-1.5 border-b border-gray-100 last:border-0">
+        <span className="w-44 flex-shrink-0 text-xs font-medium text-gray-500 uppercase tracking-wide">
+          {label}
+        </span>
+        <span className="text-sm text-gray-900 break-words">
+          {Array.isArray(value) ? value.join(', ') : String(value)}
+        </span>
+      </div>
+    );
+  };
+
+  return (
+    <Dialog open={!!pref} onOpenChange={open => !open && onClose()}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="text-lg">{profName} — Preference</DialogTitle>
+          <DialogDescription>
+            {pref.semester} {pref.year} &middot;{' '}
+            {pref.admin_approved ? (
+              <span className="text-green-600 font-medium">Approved</span>
+            ) : (
+              <span className="text-amber-600 font-medium">Pending approval</span>
+            )}
+            {pref.confidence != null && (
+              <> &middot; Confidence: {Math.round(pref.confidence * 100)}%</>
+            )}
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* Parsed Preference JSON */}
+        {parsed ? (
+          <div className="mt-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-2">Extracted Preferences</h3>
+            <div className="bg-gray-50 rounded-lg px-4 py-2 border border-gray-200">
+              <Field label="Requested Load" value={parsed.requested_load} />
+              <Field label="Max Load" value={parsed.max_load} />
+              <Field label="Preferred Courses" value={parsed.preferred_courses} />
+              <Field label="Avoid Courses" value={parsed.avoid_courses} />
+              <Field label="Preferred Levels" value={parsed.preferred_levels} />
+              <Field label="Preferred Timeslots" value={parsed.preferred_timeslots} />
+              <Field label="Avoid Timeslots" value={parsed.avoid_timeslots} />
+              <Field label="Avoid Days" value={parsed.avoid_days} />
+              <Field label="Back-to-Back" value={
+                parsed.wants_back_to_back === true ? 'Prefers back-to-back'
+                  : parsed.wants_back_to_back === false ? 'Avoid back-to-back'
+                    : null
+              } />
+              <Field label="On Leave" value={parsed.on_leave === true ? '⚠️ On Leave' : null} />
+              <Field label="Notes for Admin" value={parsed.notes_for_admin} />
+            </div>
+          </div>
+        ) : (
+          <div className="mt-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+            ⚠️ No parsed JSON yet. Ask the TES Agent to run{' '}
+            <code className="font-mono text-xs">extract_and_save_preference_json({pref.id})</code>.
+          </div>
+        )}
+
+        {/* Raw Email */}
+        {pref.raw_email && (
+          <div className="mt-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-2">Raw Email</h3>
+            <pre className="bg-gray-900 text-gray-100 text-xs rounded-lg p-4 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed">
+              {pref.raw_email}
+            </pre>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---- Main Dashboard ----
 export default function Dashboard() {
   const [professors, setProfessors] = useState<Professor[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
@@ -74,29 +168,31 @@ export default function Dashboard() {
   const [preferences, setPreferences] = useState<Preference[]>([]);
   const [loading, setLoading] = useState(true);
   const [approvingId, setApprovingId] = useState<number | null>(null);
+  const [viewingPref, setViewingPref] = useState<Preference | null>(null);
+
+  const fetchAll = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [profRes, courseRes, schedRes, prefRes] = await Promise.all([
+        fetch(`${API}/professors`),
+        fetch(`${API}/courses`),
+        fetch(`${API}/schedules`),
+        fetch(`${API}/preferences`),
+      ]);
+      setProfessors(await profRes.json());
+      setCourses(await courseRes.json());
+      setSchedules(await schedRes.json());
+      setPreferences(await prefRes.json());
+    } catch (err) {
+      console.error('Failed to fetch data:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    async function fetchAll() {
-      setLoading(true);
-      try {
-        const [profRes, courseRes, schedRes, prefRes] = await Promise.all([
-          fetch(`${API}/professors`),
-          fetch(`${API}/courses`),
-          fetch(`${API}/schedules`),
-          fetch(`${API}/preferences`),
-        ]);
-        setProfessors(await profRes.json());
-        setCourses(await courseRes.json());
-        setSchedules(await schedRes.json());
-        setPreferences(await prefRes.json());
-      } catch (err) {
-        console.error('Failed to fetch data:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
     fetchAll();
-  }, []);
+  }, [fetchAll]);
 
   const handleApprove = async (prefId: number) => {
     setApprovingId(prefId);
@@ -126,6 +222,9 @@ export default function Dashboard() {
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
+      {/* Preference Detail Dialog */}
+      <PreferenceDetailDialog pref={viewingPref} onClose={() => setViewingPref(null)} />
+
       {/* Left Side: Data Dashboard */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0 border-r border-gray-200">
         <header className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center flex-shrink-0">
@@ -189,7 +288,7 @@ export default function Dashboard() {
                             <TableHead>Status</TableHead>
                             <TableHead>Confidence</TableHead>
                             <TableHead>Received</TableHead>
-                            <TableHead className="text-right">Action</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -211,18 +310,31 @@ export default function Dashboard() {
                               <TableCell>{pref.confidence != null ? `${Math.round(pref.confidence * 100)}%` : '—'}</TableCell>
                               <TableCell className="text-xs text-gray-500">{new Date(pref.received_at).toLocaleDateString()}</TableCell>
                               <TableCell className="text-right">
-                                {!pref.admin_approved && (
+                                <div className="flex items-center justify-end gap-2">
+                                  {/* View button — always shown */}
                                   <Button
                                     size="sm"
-                                    variant="outline"
-                                    className="text-green-700 border-green-300 hover:bg-green-50"
-                                    disabled={approvingId === pref.id}
-                                    onClick={() => handleApprove(pref.id)}
+                                    variant="ghost"
+                                    className="text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                                    onClick={() => setViewingPref(pref)}
                                   >
-                                    {approvingId === pref.id ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
-                                    Approve
+                                    <Eye className="w-3.5 h-3.5 mr-1" />
+                                    View
                                   </Button>
-                                )}
+                                  {/* Approve button — pending only */}
+                                  {!pref.admin_approved && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="text-green-700 border-green-300 hover:bg-green-50"
+                                      disabled={approvingId === pref.id}
+                                      onClick={() => handleApprove(pref.id)}
+                                    >
+                                      {approvingId === pref.id ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
+                                      Approve
+                                    </Button>
+                                  )}
+                                </div>
                               </TableCell>
                             </TableRow>
                           ))}
@@ -417,7 +529,7 @@ export default function Dashboard() {
 
       {/* Right Side: AI Agent Chat */}
       <div className="w-[450px] flex-shrink-0 bg-white shadow-xl z-10 flex flex-col overflow-hidden">
-        <ChatPanel />
+        <ChatPanel onDone={fetchAll} />
       </div>
     </div>
   );

@@ -7,96 +7,62 @@ from fastapi.responses import StreamingResponse
 from google import genai
 from google.genai import types
 
-from ..database import SessionLocal
-from ..models import Professor, Schedule, Constraint, Preference, Course
-from ..email import send_preference_email, poll_unread_replies
-from ..ai import extract_preferences_from_email
-from ..solver import run_solver
+from ..tools import ALL_TOOLS, TOOL_REGISTRY
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 client = genai.Client() if os.getenv("GEMINI_API_KEY") else None
 
 # -------------------------------------------------------------------------
-# Python Tool Wrappers (Exposing exactly what FastMCP exposed)
+# System Instruction with Guardrails
 # -------------------------------------------------------------------------
 
-def get_professor(prof_id: int) -> str:
-    """Retrieve professor details by their ID."""
-    db = SessionLocal()
-    try:
-        prof = db.query(Professor).filter(Professor.id == prof_id).first()
-        if not prof:
-            return json.dumps({"error": f"Professor with ID {prof_id} not found."})
-        
-        prof_data = {
-            "id": prof.id, "name": prof.name, "email": prof.email,
-            "office": prof.office, "rank": prof.rank,
-            "max_sections": prof.max_sections, "active": prof.active
-        }
-        return json.dumps(prof_data)
-    finally:
-        db.close()
+SYSTEM_INSTRUCTION = """\
+You are the AI assistant for the TCU Econ Scheduler (TES) system.
+You help the department chair manage professors, courses, preferences, and generate schedules.
 
-def get_courses() -> str:
-    """Retrieve all available courses and their core requirements."""
-    db = SessionLocal()
-    try:
-        courses = db.query(Course).all()
-        courses_data = []
-        for c in courses:
-            courses_data.append({
-                "id": c.id, "code": c.code, "name": c.name, "credits": c.credits,
-                "level": c.level, "min_sections": c.min_sections, "max_sections": c.max_sections,
-                "requires_lab": c.requires_lab, "core_ssc": c.core_ssc,
-                "core_ht": c.core_ht, "core_ga": c.core_ga, "core_wem": c.core_wem
-            })
-        return json.dumps(courses_data)
-    finally:
-        db.close()
+## YOUR TOOLS
+You have access to tools for:
+- Viewing professors, courses, and preferences
+- Creating, updating, and deleting professors and courses
+- Polling email for preference replies and auto-parsing them
+- Creating manual preferences for missing professors
+- Approving preferences
+- Running pre-flight checks and the constraint solver
 
-def get_unreplied_professors(year: int, semester: str) -> str:
-    """Retrieve professors who have not replied yet for the given year and semester."""
-    db = SessionLocal()
-    try:
-        subquery = db.query(Preference.professor_id).filter(
-            Preference.year == year, Preference.semester == semester
-        ).scalar_subquery()
-        
-        unreplied_professors = db.query(Professor).filter(
-            Professor.active == True, Professor.id.notin_(subquery)
-        ).all()
+## STRICT RULES — YOU MUST FOLLOW THESE
 
-        if not unreplied_professors:
-            return json.dumps({"message": "All active professors have replied for this semester."})
-        
-        unreplied_professors_data = []
-        for prof in unreplied_professors:
-            unreplied_professors_data.append({
-                "id": prof.id, "name": prof.name, "email": prof.email, "active": prof.active
-            })
-        return json.dumps(unreplied_professors_data)
-    finally:
-        db.close()
+### NEVER Ask the User for IDs
+1. NEVER ask "what is the professor ID?" or "what is the preference ID?" — this is unacceptable.
+2. If you need a professor's ID, call `list_professors()` first and find them by name.
+3. If you need a preference ID, call `get_professor_preference(prof_id, semester, year)` after looking up the professor.
+4. If you need a course ID, call `get_courses()` and match by code or name.
+5. Always resolve names → IDs yourself using your tools before taking action.
 
-def trigger_poll_unread_replies() -> str:
-    """Poll the system email inbox for any unread preference replies and save them to the database."""
-    replies = poll_unread_replies()
-    return json.dumps({"processed_count": len(replies), "replies": replies})
+### Always Chain Tools Automatically
+6. After polling (`trigger_poll_unread_replies`), the extraction and auto-approval run automatically. Report:
+   - How many were auto-approved
+   - Which prefs need manual review and why (low confidence, on_leave, admin notes)
+7. After `approve_preference`, the tool returns preflight status. Report it immediately:
+   - If `ready: true` → tell the user they can now run the solver
+   - If blockers remain → list them and offer to fix each one
+8. Never make the user ask for the next obvious step — anticipate it and do it.
 
-def trigger_solver(semester: str, year: int) -> str:
-    """Run the Constraint Solver to generate a schedule for the given semester and year."""
-    result = run_solver(semester, year)
-    return json.dumps(result)
+### Solver Guardrail
+9. Before EVER calling `trigger_solver`, you MUST call `run_preflight_checks` first.
+10. If `run_preflight_checks` returns `ready: false`, REFUSE to run the solver.
+    Explain each blocker and offer to fix them (create preference, approve, etc.).
 
-# Registry of available tools for Gemini to call
-tool_registry = {
-    "get_professor": get_professor,
-    "get_courses": get_courses,
-    "get_unreplied_professors": get_unreplied_professors,
-    "trigger_poll_unread_replies": trigger_poll_unread_replies,
-    "trigger_solver": trigger_solver
-}
+### Data Integrity
+11. Use `deactivate_professor` (soft delete) — professors may appear in historical schedules.
+12. `delete_course` will refuse if sections reference it — explain this clearly to the user.
+
+### Communication Style
+- Be concise and professional.
+- Use markdown tables for structured data.
+- Summarize tool results in plain language — never dump raw JSON at the user.
+- Confirm destructive actions (deletes, deactivation) before proceeding.
+"""
 
 # -------------------------------------------------------------------------
 # Streaming API Endpoint
@@ -116,88 +82,89 @@ async def chat_endpoint(request: Request):
 
     data = await request.json()
     user_message = data.get("message", "")
-    
-    # We maintain a minimal conversation history array here.
-    # In a fully production app, we would store this history in a database or frontend context.
-    contents = [types.Content(role="user", parts=[types.Part.from_text(text=user_message)])]
+    history = data.get("history", [])  # List of {role, content} from the frontend
+
+    # Build the full conversation content from history + new message
+    # History roles from frontend: 'user' | 'assistant' → Gemini roles: 'user' | 'model'
+    contents = []
+    for msg in history:
+        role = "model" if msg.get("role") == "assistant" else "user"
+        content = msg.get("content", "").strip()
+        if content:  # Skip empty placeholders
+            contents.append(types.Content(role=role, parts=[types.Part.from_text(text=content)]))
+
+    # Append the new user message
+    contents.append(types.Content(role="user", parts=[types.Part.from_text(text=user_message)]))
 
     async def event_stream() -> AsyncGenerator[str, None]:
-        # Provide Gemini with our tools
         config = types.GenerateContentConfig(
-            tools=[
-                get_professor, 
-                get_courses, 
-                get_unreplied_professors, 
-                trigger_poll_unread_replies, 
-                trigger_solver
-            ],
+            tools=ALL_TOOLS,
             temperature=0.4,
-            system_instruction=(
-                "You are the AI assistant for the TCU Econ Scheduler (TES) system. "
-                "You help the department chair manage professor preferences and generate schedules. "
-                "Always check if all professors have replied using get_unreplied_professors before allowing "
-                "the solver to run. Be concise and professional."
-            )
+            system_instruction=SYSTEM_INSTRUCTION
         )
 
         try:
-            # First, send the message to Gemini and check if it wants to use a tool
             response = client.models.generate_content(
                 model='gemini-2.5-flash',
                 contents=contents,
                 config=config
             )
 
-            # If Gemini decided to call a function:
-            if response.function_calls:
+            # Handle function calls (may be multiple rounds)
+            max_rounds = 5  # Safety limit to prevent infinite tool loops
+            round_count = 0
+
+            while response.function_calls and round_count < max_rounds:
+                round_count += 1
+
                 for function_call in response.function_calls:
                     tool_name = function_call.name
                     tool_args = function_call.args
-                    
-                    # 1. Yield an SSE event telling the UI we are executing a tool
+
+                    # 1. Yield SSE event telling the UI we are executing a tool
                     yield f"data: {json.dumps({'type': 'tool_call', 'name': tool_name})}\n\n"
-                    await asyncio.sleep(0.1)  # tiny pause for UI to catch up
+                    await asyncio.sleep(0.1)
 
                     # 2. Execute the python function locally
-                    tool_func = tool_registry.get(tool_name)
-                    tool_result = ""
+                    tool_func = TOOL_REGISTRY.get(tool_name)
                     if tool_func:
                         try:
-                            # Safely pass the arguments unpacked
                             tool_result = tool_func(**tool_args)
                         except Exception as e:
                             tool_result = json.dumps({"error": str(e)})
                     else:
-                        tool_result = json.dumps({"error": f"Tool {tool_name} not found locally."})
+                        tool_result = json.dumps({"error": f"Tool {tool_name} not found."})
 
-                    # 3. Feed the result back into the content history for Gemini
-                    contents.append(response.candidates[0].content) # Append Assistant's function call request
+                    # 3. Feed the result back into the content history
+                    contents.append(response.candidates[0].content)
                     contents.append(
                         types.Content(
-                            role="tool", 
-                            parts=[types.Part.from_function_response(name=tool_name, response={"result": tool_result})]
+                            role="tool",
+                            parts=[types.Part.from_function_response(
+                                name=tool_name,
+                                response={"result": tool_result}
+                            )]
                         )
                     )
 
-                # 4. Ask Gemini to generate the final response now that it has the tool data
-                # We use generate_content_stream to get that cool word-by-word typewriter effect
-                response_stream = client.models.generate_content_stream(
+                # 4. Ask Gemini for the next response (may call more tools or produce text)
+                response = client.models.generate_content(
                     model='gemini-2.5-flash',
                     contents=contents,
                     config=config
                 )
-                for chunk in response_stream:
-                    if chunk.text:
-                        yield f"data: {json.dumps({'type': 'text', 'content': chunk.text})}\n\n"
-                        await asyncio.sleep(0.01)
 
-            # If Gemini just wanted to talk normally (no tools needed):
-            else:
-                if response.text:
-                    # In a real app we'd stream this too, but for simplicity if it didn't call a tool, we yield the block
-                    yield f"data: {json.dumps({'type': 'text', 'content': response.text})}\n\n"
+            # Stream the final text response.
+            # IMPORTANT: Yield response.text directly rather than re-calling
+            # generate_content_stream, which would let Gemini invoke tools again
+            # (causing double sends, etc.)
+            if response.text:
+                words = response.text.split(' ')
+                for i, word in enumerate(words):
+                    chunk = word if i == len(words) - 1 else word + ' '
+                    yield f"data: {json.dumps({'type': 'text', 'content': chunk})}\n\n"
+                    await asyncio.sleep(0.01)
 
-            # 5. Tell the UI we are done
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
         except Exception as e:

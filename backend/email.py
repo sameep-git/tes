@@ -213,13 +213,15 @@ def poll_unread_replies(server_mode: bool = False) -> list:
     try:
         service = get_gmail_service(server_mode=server_mode)
 
-        # 1. Search for UNREAD preference-reply messages. The subject filter avoids
-        #    accidentally marking unrelated inbox mail as read. Handle pagination.
+        # 1. Search for UNREAD preference-reply messages.
+        # We only require UNREAD (not INBOX) so that threaded replies that Gmail
+        # groups with the sent item aren't missed. The subject filter avoids
+        # accidentally marking unrelated mail as read.
         messages: list = []
         list_kwargs: dict = {
             'userId': 'me',
-            'labelIds': ['INBOX', 'UNREAD'],
-            'q': 'subject:"Action Required:"',
+            'labelIds': ['UNREAD'],
+            'q': 'subject:"Action Required"',
         }
         results = service.users().messages().list(**list_kwargs).execute()
         while True:
@@ -230,6 +232,8 @@ def poll_unread_replies(server_mode: bool = False) -> list:
             results = service.users().messages().list(
                 **list_kwargs, pageToken=page_token
             ).execute()
+
+        print(f"[POLL] Found {len(messages)} unread message(s) matching query.")
 
         if not messages:
             return []

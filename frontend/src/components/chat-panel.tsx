@@ -7,9 +7,9 @@ import { Input } from '@/components/ui/input';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-export default function ChatPanel() {
+export default function ChatPanel({ onDone }: { onDone?: () => void }) {
   const [messages, setMessages] = useState<{ role: string; content: string }[]>([
-    { role: 'assistant', content: 'Hello Prof. Hawley. The Fall 2025 scheduling cycle is active. How can I help you today?' }
+    { role: 'assistant', content: 'Hello Dr. Hawley. The Fall 2025 scheduling cycle is active. How can I help you today?' }
   ]);
   const [input, setInput] = useState('');
   const [isThinking, setIsThinking] = useState(false);
@@ -41,7 +41,11 @@ export default function ChatPanel() {
       const response = await fetch('http://localhost:8000/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage }),
+        body: JSON.stringify({
+          message: userMessage,
+          // Send all prior messages as history (excluding current user msg and empty placeholders)
+          history: messages.filter(m => m.content.trim() !== ''),
+        }),
       });
 
       if (!response.body) throw new Error("No body returned");
@@ -90,6 +94,7 @@ export default function ChatPanel() {
               } else if (data.type === 'done') {
                 setIsThinking(false);
                 setActiveTool(null);
+                onDone?.();
               }
             } catch {
               // Ignore malformed JSON chunks
