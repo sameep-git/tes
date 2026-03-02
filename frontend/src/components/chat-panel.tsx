@@ -38,12 +38,16 @@ export default function ChatPanel({ onDone }: { onDone?: () => void }) {
     setMessages(prev => [...prev, { role: 'user', content: userMessage }, { role: 'assistant', content: '' }]);
 
     try {
-      const response = await fetch('http://localhost:8000/api/chat', {
+      const apiBase = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+      const adminToken = process.env.NEXT_PUBLIC_ADMIN_TOKEN;
+      const response = await fetch(`${apiBase}/api/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(adminToken ? { 'Authorization': `Bearer ${adminToken}` } : {}),
+        },
         body: JSON.stringify({
           message: userMessage,
-          // Send all prior messages as history (excluding current user msg and empty placeholders)
           history: messages.filter(m => m.content.trim() !== ''),
         }),
       });
@@ -94,7 +98,9 @@ export default function ChatPanel({ onDone }: { onDone?: () => void }) {
               } else if (data.type === 'done') {
                 setIsThinking(false);
                 setActiveTool(null);
-                onDone?.();
+                // Defer onDone so the final chat message state update fully
+                // commits before fetchAll triggers a Dashboard re-render.
+                if (onDone) setTimeout(onDone, 0);
               }
             } catch {
               // Ignore malformed JSON chunks
@@ -144,7 +150,22 @@ export default function ChatPanel({ onDone }: { onDone?: () => void }) {
                 <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${msg.role === 'user' ? 'bg-gray-800 text-white rounded-tr-none' : 'bg-gray-100 text-gray-800 rounded-tl-none'}`}>
                   {msg.role === 'assistant' ? (
                     <div className="chat-markdown">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          table: ({ children }) => (
+                            <div className="overflow-x-auto my-2 rounded cursor-grab active:cursor-grabbing [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                              <table className="border-collapse text-xs w-full">{children}</table>
+                            </div>
+                          ),
+                          th: ({ children }) => (
+                            <th className="border border-gray-300 bg-gray-200 px-2 py-1 text-left font-semibold whitespace-nowrap">{children}</th>
+                          ),
+                          td: ({ children }) => (
+                            <td className="border border-gray-300 px-2 py-1 whitespace-nowrap">{children}</td>
+                          ),
+                        }}
+                      >{msg.content}</ReactMarkdown>
                     </div>
                   ) : (
                     <span className="whitespace-pre-wrap">{msg.content}</span>

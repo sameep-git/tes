@@ -68,12 +68,21 @@ You have access to tools for:
 # Streaming API Endpoint
 # -------------------------------------------------------------------------
 
-@router.post("/")
+@router.post("")
 async def chat_endpoint(request: Request):
     """
     Handles streaming chat interactions with Gemini using Server-Sent Events (SSE).
     Allows the frontend to see real-time tool execution logs before seeing the final text.
     """
+    # --- Auth check ---
+    admin_token = os.getenv("TES_ADMIN_TOKEN", "")
+    if admin_token:
+        auth_header = request.headers.get("Authorization", "")
+        provided = auth_header.removeprefix("Bearer ").strip()
+        if provided != admin_token:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+
     if not client:
         return StreamingResponse(
             iter(["data: " + json.dumps({"type": "error", "content": "GEMINI_API_KEY missing"}) + "\n\n"]),
@@ -117,6 +126,11 @@ async def chat_endpoint(request: Request):
             while response.function_calls and round_count < max_rounds:
                 round_count += 1
 
+                # Append the model's response ONCE per round (not once per function call)
+                # to avoid duplicating the same model message in context when Gemini
+                # returns multiple parallel tool calls in a single response.
+                contents.append(response.candidates[0].content)
+
                 for function_call in response.function_calls:
                     tool_name = function_call.name
                     tool_args = function_call.args
@@ -135,8 +149,8 @@ async def chat_endpoint(request: Request):
                     else:
                         tool_result = json.dumps({"error": f"Tool {tool_name} not found."})
 
-                    # 3. Feed the result back into the content history
-                    contents.append(response.candidates[0].content)
+                    # 3. Each tool response is its own Content block — Gemini requires
+                    # one Content per function response, not batched into one block.
                     contents.append(
                         types.Content(
                             role="tool",
@@ -153,6 +167,13 @@ async def chat_endpoint(request: Request):
                     contents=contents,
                     config=config
                 )
+
+            # Safety limit reached — Gemini is still requesting tools but we
+            # must stop to avoid infinite loops. Surface this to the user.
+            if response.function_calls:
+                yield f"data: {json.dumps({'type': 'error', 'content': 'The agent reached its maximum tool-call limit (5 rounds) without producing a final answer. Please rephrase or break your request into smaller steps.'})}\n\n"
+                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                return
 
             # Stream the final text response.
             # IMPORTANT: Yield response.text directly rather than re-calling

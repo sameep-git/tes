@@ -11,7 +11,7 @@ services:
     volumes:
       - db_data:/data
       - ./credentials.json:/app/credentials.json:ro
-      - ./token.json:/app/token.json:ro
+      - ./token.json:/app/token.json
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -26,6 +26,7 @@ services:
       dockerfile: Dockerfile.frontend
       args:
         NEXT_PUBLIC_API_URL: http://localhost:8000
+        NEXT_PUBLIC_ADMIN_TOKEN: ${NEXT_PUBLIC_ADMIN_TOKEN:-}
     ports:
       - "3000:3000"
     depends_on:
