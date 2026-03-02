@@ -1,19 +1,22 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, JSON, DateTime, Float
-from sqlalchemy.orm import relationship
 from datetime import datetime
+from typing import Any, Optional
+
+from sqlalchemy import ForeignKey, JSON
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
+
 
 class Professor(Base):
     __tablename__ = "professors"
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, index=True)
-    email = Column(String, unique=True, index=True)
-    office = Column(String, nullable=True)
-    rank = Column(String)  # e.g., Tenured, Tenure-Track, Adjunct, Visiting
-    max_sections = Column(Integer, default=3)
-    active = Column(Boolean, default=True)
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(index=True)
+    email: Mapped[str] = mapped_column(unique=True, index=True)
+    office: Mapped[Optional[str]] = mapped_column(default=None)
+    rank: Mapped[str] = mapped_column()  # e.g., Tenured, Tenure-Track, Adjunct, Visiting
+    max_sections: Mapped[int] = mapped_column(default=3)
+    active: Mapped[bool] = mapped_column(default=True)
 
     sections = relationship("Section", back_populates="professor")
     preferences = relationship("Preference", back_populates="professor")
@@ -23,14 +26,20 @@ class Professor(Base):
 class Course(Base):
     __tablename__ = "courses"
 
-    id = Column(Integer, primary_key=True, index=True)
-    code = Column(String, unique=True, index=True)  # e.g., ECON 301
-    name = Column(String)
-    credits = Column(Integer, default=3)
-    level = Column(Integer)  # e.g., 100, 300, 400
-    min_sections = Column(Integer, default=1)
-    max_sections = Column(Integer, default=5)
-    requires_lab = Column(Boolean, default=False)
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    code: Mapped[str] = mapped_column(unique=True, index=True)  # e.g., ECON 301
+    name: Mapped[str] = mapped_column()
+    credits: Mapped[int] = mapped_column(default=3)
+    level: Mapped[int] = mapped_column()  # e.g., 100, 300, 400
+    min_sections: Mapped[int] = mapped_column(default=1)
+    max_sections: Mapped[int] = mapped_column(default=5)
+    requires_lab: Mapped[bool] = mapped_column(default=False)
+
+    # Core requirements satisfied by this course
+    core_ssc: Mapped[bool] = mapped_column(default=False)
+    core_ht: Mapped[bool] = mapped_column(default=False)
+    core_ga: Mapped[bool] = mapped_column(default=False)
+    core_wem: Mapped[bool] = mapped_column(default=False)
 
     sections = relationship("Section", back_populates="course")
 
@@ -38,12 +47,12 @@ class Course(Base):
 class TimeSlot(Base):
     __tablename__ = "time_slots"
 
-    id = Column(Integer, primary_key=True, index=True)
-    days = Column(String)  # e.g., "MWF", "TTh"
-    start_time = Column(String)  # e.g., "09:00"
-    end_time = Column(String)  # e.g., "09:50"
-    label = Column(String)  # e.g., "MWF 9:00am"
-    active = Column(Boolean, default=True)
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    days: Mapped[str] = mapped_column()  # e.g., "MWF", "TR"
+    start_time: Mapped[str] = mapped_column()  # e.g., "09:00"
+    end_time: Mapped[str] = mapped_column()  # e.g., "09:50"
+    label: Mapped[str] = mapped_column()  # e.g., "MWF 9:00am"
+    active: Mapped[bool] = mapped_column(default=True)
 
     sections = relationship("Section", back_populates="timeslot")
 
@@ -51,13 +60,13 @@ class TimeSlot(Base):
 class Schedule(Base):
     __tablename__ = "schedules"
 
-    id = Column(Integer, primary_key=True, index=True)
-    semester = Column(String)  # e.g., "Fall"
-    year = Column(Integer)
-    status = Column(String, default="Draft")  # Draft, Finalized
-    solver_log = Column(String, nullable=True)
-    finalized_at = Column(DateTime, nullable=True)
-    excel_path = Column(String, nullable=True)
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    semester: Mapped[str] = mapped_column()  # e.g., "Fall"
+    year: Mapped[int] = mapped_column()
+    status: Mapped[str] = mapped_column(default="Draft")  # Draft, Finalized
+    solver_log: Mapped[Optional[str]] = mapped_column(default=None)
+    finalized_at: Mapped[Optional[datetime]] = mapped_column(default=None)
+    excel_path: Mapped[Optional[str]] = mapped_column(default=None)
 
     sections = relationship("Section", back_populates="schedule")
 
@@ -65,12 +74,12 @@ class Schedule(Base):
 class Section(Base):
     __tablename__ = "sections"
 
-    id = Column(Integer, primary_key=True, index=True)
-    course_id = Column(Integer, ForeignKey("courses.id"))
-    professor_id = Column(Integer, ForeignKey("professors.id"), nullable=True)
-    timeslot_id = Column(Integer, ForeignKey("time_slots.id"), nullable=True)
-    schedule_id = Column(Integer, ForeignKey("schedules.id"))
-    status = Column(String, default="Pending")
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    course_id: Mapped[int] = mapped_column(ForeignKey("courses.id"))
+    professor_id: Mapped[Optional[int]] = mapped_column(ForeignKey("professors.id"), default=None)
+    timeslot_id: Mapped[Optional[int]] = mapped_column(ForeignKey("time_slots.id"), default=None)
+    schedule_id: Mapped[int] = mapped_column(ForeignKey("schedules.id"))
+    status: Mapped[str] = mapped_column(default="Pending")
 
     course = relationship("Course", back_populates="sections")
     professor = relationship("Professor", back_populates="sections")
@@ -81,15 +90,15 @@ class Section(Base):
 class Preference(Base):
     __tablename__ = "preferences"
 
-    id = Column(Integer, primary_key=True, index=True)
-    professor_id = Column(Integer, ForeignKey("professors.id"))
-    semester = Column(String)
-    year = Column(Integer)
-    raw_email = Column(String, nullable=True)
-    parsed_json = Column(JSON, nullable=True)
-    confidence = Column(Float, nullable=True)
-    admin_approved = Column(Boolean, default=False)
-    received_at = Column(DateTime, default=datetime.utcnow)
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    professor_id: Mapped[int] = mapped_column(ForeignKey("professors.id"))
+    semester: Mapped[str] = mapped_column()
+    year: Mapped[int] = mapped_column()
+    raw_email: Mapped[Optional[str]] = mapped_column(default=None)
+    parsed_json: Mapped[Optional[Any]] = mapped_column(JSON, default=None)
+    confidence: Mapped[Optional[float]] = mapped_column(default=None)
+    admin_approved: Mapped[bool] = mapped_column(default=False)
+    received_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
     professor = relationship("Professor", back_populates="preferences")
 
@@ -97,13 +106,13 @@ class Preference(Base):
 class EmailLog(Base):
     __tablename__ = "email_log"
 
-    id = Column(Integer, primary_key=True, index=True)
-    professor_id = Column(Integer, ForeignKey("professors.id"))
-    direction = Column(String)  # 'sent' or 'received'
-    gmail_thread_id = Column(String, nullable=True)
-    subject = Column(String)
-    status = Column(String)
-    sent_at = Column(DateTime, default=datetime.utcnow)
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    professor_id: Mapped[Optional[int]] = mapped_column(ForeignKey("professors.id"), default=None)
+    direction: Mapped[str] = mapped_column()  # 'sent' or 'received'
+    gmail_thread_id: Mapped[Optional[str]] = mapped_column(default=None)
+    subject: Mapped[str] = mapped_column()
+    status: Mapped[str] = mapped_column()
+    sent_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
     professor = relationship("Professor", back_populates="email_logs")
 
@@ -111,9 +120,9 @@ class EmailLog(Base):
 class Constraint(Base):
     __tablename__ = "constraints"
 
-    id = Column(Integer, primary_key=True, index=True)
-    type = Column(String)  # 'hard' or 'soft'
-    name = Column(String)
-    value_json = Column(JSON, nullable=True)
-    description = Column(String)
-    active = Column(Boolean, default=True)
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    type: Mapped[str] = mapped_column()  # 'hard' or 'soft'
+    name: Mapped[str] = mapped_column()
+    value_json: Mapped[Optional[Any]] = mapped_column(JSON, default=None)
+    description: Mapped[str] = mapped_column()
+    active: Mapped[bool] = mapped_column(default=True)
