@@ -17,15 +17,23 @@ scheduler = BackgroundScheduler()
 def scheduled_poll():
     print("Running automatic email poll...")
     try:
-        replies = poll_unread_replies()
+        replies = poll_unread_replies(server_mode=True)
         if replies:
             print(f"Automatically processed {len(replies)} new replies!")
+    except RuntimeError as e:
+        # get_gmail_service() raises RuntimeError in server_mode when the token
+        # is missing or expired. Log clearly so the admin knows to re-authenticate.
+        print(f"[EMAIL POLL] Auth error — run the app interactively to refresh token.json: {e}")
     except Exception as e:
         print(f"Error in automatic polling: {e}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Start the scheduler when the app starts
+    # NOTE: This scheduler runs in-process. If the app is deployed with multiple
+    # worker processes or replicas, each will poll the same inbox concurrently,
+    # causing duplicate processing. Add a distributed lock (e.g. Redis SETNX)
+    # or move polling to an external cron job before scaling beyond one worker.
     scheduler.add_job(scheduled_poll, 'interval', minutes=15)
     scheduler.start()
     print("Background email polling scheduler started (runs every 15 minutes).")

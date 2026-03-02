@@ -7,12 +7,38 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from backend.database import SessionLocal
-from backend.models import Professor, Schedule, Constraint, Preference
+from backend.models import Professor, Schedule, Constraint, Preference, Course
 from backend.email import send_preference_email, poll_unread_replies
 from backend.ai import extract_preferences_from_email
 
 # Initialize FastMCP server
 mcp = FastMCP("TES")
+
+@mcp.tool()
+def get_courses() -> str:
+    """Retrieve all available courses and their core requirements."""
+    db = SessionLocal()
+    try:
+        courses = db.query(Course).all()
+        courses_data = []
+        for c in courses:
+            courses_data.append({
+                "id": c.id,
+                "code": c.code,
+                "name": c.name,
+                "credits": c.credits,
+                "level": c.level,
+                "min_sections": c.min_sections,
+                "max_sections": c.max_sections,
+                "requires_lab": c.requires_lab,
+                "core_ssc": c.core_ssc,
+                "core_ht": c.core_ht,
+                "core_ga": c.core_ga,
+                "core_wem": c.core_wem
+            })
+        return json.dumps(courses_data)
+    finally:
+        db.close()
 
 @mcp.tool()
 def get_professor(prof_id: int) -> str:
@@ -148,11 +174,15 @@ def extract_and_save_preference_json(pref_id: int) -> str:
         if not pref:
             return json.dumps({"error": f"Preference record {pref_id} not found."})
         
-        if not str(pref.raw_email):
+        raw_email = pref.raw_email
+        if raw_email is None:
+            return json.dumps({"error": f"Preference record {pref_id} does not have raw_email text."})
+        raw_email_str = str(raw_email).strip()
+        if not raw_email_str:
             return json.dumps({"error": f"Preference record {pref_id} does not have raw_email text."})
 
         # Run the AI extraction
-        parsed_obj = extract_preferences_from_email(str(pref.raw_email))
+        parsed_obj = extract_preferences_from_email(raw_email_str)
         
         # Save it to the database
         pref.parsed_json = parsed_obj.model_dump()  # type: ignore[assignment]

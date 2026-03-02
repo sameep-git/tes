@@ -1,6 +1,5 @@
 import os.path
 import base64
-from email.message import EmailMessage
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -15,14 +14,25 @@ from .models import Professor, EmailLog, Schedule, Section, Preference
 # If modifying these scopes, delete the file token.json.
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.send', 'https://www.googleapis.com/auth/gmail.modify']
 
-def get_gmail_service():
-    """Authenticates and returns the Gmail API service."""
+def get_gmail_service(server_mode: bool = False):
+    """Authenticates and returns the Gmail API service.
+
+    Args:
+        server_mode: When True, raises RuntimeError instead of launching the
+                     interactive OAuth flow. Use this for background jobs or
+                     headless server contexts where stdin is unavailable.
+    """
     creds = None
     if os.path.exists('token.json'):
         creds = Credentials.from_authorized_user_file('token.json', SCOPES)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
+        elif server_mode:
+            raise RuntimeError(
+                "Gmail token is missing or expired. Run the app interactively "
+                "once to complete the OAuth flow and regenerate token.json."
+            )
         else:
             flow = InstalledAppFlow.from_client_secrets_file(
                 'credentials.json', SCOPES)
@@ -39,9 +49,9 @@ def send_preference_email(prof_id: int, semester: str, year: int) -> dict:
     Logs the sent email to the database.
     """
     db = SessionLocal()
-    service = get_gmail_service()
-    
+
     try:
+        service = get_gmail_service()
         # 1. Get the professor from the database
         prof = db.query(Professor).filter(Professor.id == prof_id).first()
         if not prof:
@@ -154,36 +164,67 @@ def send_preference_email(prof_id: int, semester: str, year: int) -> dict:
     finally:
         db.close()
 
+def _safe_decode(data: str) -> str:
+    """Safely decode a base64url-encoded string to UTF-8 text.
+
+    Normalizes missing '=' padding and replaces un-decodable bytes so that a
+    single malformed part never aborts the entire email processing loop.
+    """
+    if not data:
+        return ""
+    try:
+        padding = '=' * (-len(data) % 4)
+        decoded_bytes = base64.urlsafe_b64decode(data + padding)
+        return decoded_bytes.decode('utf-8', errors='replace')
+    except Exception:
+        return ""
+
+
 def get_email_body(payload: dict) -> str:
     """Recursively extract the plain text body from a Gmail API payload."""
     body = ""
     if 'parts' in payload:
         for part in payload['parts']:
             if part['mimeType'] == 'text/plain':
-                data = part['body'].get('data', '')
-                if data:
-                    body += base64.urlsafe_b64decode(data).decode('utf-8')
+                body += _safe_decode(part['body'].get('data', ''))
             elif 'parts' in part:
                 body += get_email_body(part)
     elif payload.get('mimeType') == 'text/plain':
-        data = payload['body'].get('data', '')
-        if data:
-            body = base64.urlsafe_b64decode(data).decode('utf-8')
+        body = _safe_decode(payload['body'].get('data', ''))
     return body
 
-def poll_unread_replies() -> list:
+def poll_unread_replies(server_mode: bool = False) -> list:
     """
     Polls the Gmail inbox for unread replies, matches them to a professor,
     stores the raw email in the Preferences table, and marks the email as read.
+
+    Args:
+        server_mode: Passed to get_gmail_service(). When True, raises instead
+                     of launching interactive OAuth (safe for background jobs).
     """
     db = SessionLocal()
-    service = get_gmail_service()
     processed_replies = []
 
     try:
-        # 1. Search for UNREAD messages in the INBOX
-        results = service.users().messages().list(userId='me', labelIds=['INBOX', 'UNREAD']).execute()
-        messages = results.get('messages', [])
+        service = get_gmail_service(server_mode=server_mode)
+
+        # 1. Search for UNREAD preference-reply messages. The subject filter avoids
+        #    accidentally marking unrelated inbox mail as read. Handle pagination.
+        messages: list = []
+        list_kwargs: dict = {
+            'userId': 'me',
+            'labelIds': ['INBOX', 'UNREAD'],
+            'q': 'subject:"Action Required:"',
+        }
+        results = service.users().messages().list(**list_kwargs).execute()
+        while True:
+            messages.extend(results.get('messages', []))
+            page_token = results.get('nextPageToken')
+            if not page_token:
+                break
+            results = service.users().messages().list(
+                **list_kwargs, pageToken=page_token
+            ).execute()
 
         if not messages:
             return []
@@ -224,13 +265,18 @@ def poll_unread_replies() -> list:
             semester = None
             year = None
 
-            # Strategy A: Use the custom X-Scheduler-Token if it survived the reply chain
+            # Strategy A: Use the custom X-Scheduler-Token if it survived the reply chain.
+            # Validate against the sender's email to prevent anyone who knows the token
+            # format from spoofing another professor's preferences.
             if scheduler_token and scheduler_token.startswith("PROF-"):
                 try:
                     parts = scheduler_token.split('-')
-                    prof_id = int(parts[1])
-                    semester = parts[2]
-                    year = int(parts[3])
+                    token_prof_id = int(parts[1])
+                    expected_prof = db.query(Professor).filter(Professor.id == token_prof_id).first()
+                    if expected_prof and str(expected_prof.email).lower() == sender_email.lower():
+                        prof_id = token_prof_id
+                        semester = parts[2]
+                        year = int(parts[3])
                 except Exception:
                     pass
             
@@ -253,14 +299,9 @@ def poll_unread_replies() -> list:
             # If we couldn't definitively identify the professor/semester from the token or thread ID,
             # throw an error instead of guessing. The admin can manually assign it.
             if prof_id is None or semester is None or year is None:
-                # Still mark it as read so we don't infinitely process it, but log it as failed.
-                service.users().messages().modify(
-                    userId='me', 
-                    id=msg_id, 
-                    body={'removeLabelIds': ['UNREAD']}
-                ).execute()
-                
-                # Log the failed incoming email so the admin sees it in the dashboard
+                # Log the failed incoming email so the admin sees it in the dashboard.
+                # Persist to DB BEFORE marking as read so that a commit failure doesn't
+                # silently drop the message from the unread queue with no trace.
                 failed_log = EmailLog(
                     professor_id=None,  # We don't know who it belongs to!
                     direction='received',
@@ -269,6 +310,14 @@ def poll_unread_replies() -> list:
                     status='failed_match'
                 )
                 db.add(failed_log)
+                db.flush()  # Write row before touching Gmail
+
+                # Mark as read so we don't infinitely process it
+                service.users().messages().modify(
+                    userId='me',
+                    id=msg_id,
+                    body={'removeLabelIds': ['UNREAD']}
+                ).execute()
                 
                 processed_replies.append({
                     "error": "Failed to match email to a specific professor or semester.",
@@ -308,11 +357,12 @@ def poll_unread_replies() -> list:
                     status='processed'
                 )
                 db.add(in_log)
+                db.flush()  # Persist preference + log before touching Gmail
 
                 # 4. Remove the UNREAD label so we don't process it again
                 service.users().messages().modify(
-                    userId='me', 
-                    id=msg_id, 
+                    userId='me',
+                    id=msg_id,
                     body={'removeLabelIds': ['UNREAD']}
                 ).execute()
 

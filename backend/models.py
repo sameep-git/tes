@@ -35,6 +35,12 @@ class Course(Base):
     max_sections: Mapped[int] = mapped_column(default=5)
     requires_lab: Mapped[bool] = mapped_column(default=False)
 
+    # Core requirements satisfied by this course
+    core_ssc: Mapped[bool] = mapped_column(default=False)
+    core_ht: Mapped[bool] = mapped_column(default=False)
+    core_ga: Mapped[bool] = mapped_column(default=False)
+    core_wem: Mapped[bool] = mapped_column(default=False)
+
     sections = relationship("Section", back_populates="course")
 
 
@@ -42,7 +48,7 @@ class TimeSlot(Base):
     __tablename__ = "time_slots"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    days: Mapped[str] = mapped_column()  # e.g., "MWF", "TTh"
+    days: Mapped[str] = mapped_column()  # e.g., "MWF", "TR"
     start_time: Mapped[str] = mapped_column()  # e.g., "09:00"
     end_time: Mapped[str] = mapped_column()  # e.g., "09:50"
     label: Mapped[str] = mapped_column()  # e.g., "MWF 9:00am"

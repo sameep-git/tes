@@ -27,6 +27,10 @@ class CourseBase(BaseModel):
     min_sections: int = 1
     max_sections: int = 5
     requires_lab: bool = False
+    core_ssc: bool = False
+    core_ht: bool = False
+    core_ga: bool = False
+    core_wem: bool = False
 
 class CourseResponse(CourseBase):
     id: int

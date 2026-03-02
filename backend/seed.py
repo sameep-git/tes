@@ -27,27 +27,35 @@ def seed_db():
 
     print("Seeding courses...")
     courses = [
-        Course(code="ECON 101", name="Principles of Microeconomics", level=100, min_sections=4, max_sections=8),
-        Course(code="ECON 102", name="Principles of Macroeconomics", level=100, min_sections=4, max_sections=6),
-        Course(code="ECON 301", name="Intermediate Microeconomics", level=300, min_sections=2, max_sections=3),
-        Course(code="ECON 302", name="Intermediate Macroeconomics", level=300, min_sections=2, max_sections=3),
-        Course(code="ECON 405", name="Econometrics", level=400, min_sections=1, max_sections=2, requires_lab=True),
-        Course(code="ECON 410", name="Game Theory", level=400, min_sections=1, max_sections=1),
-        Course(code="ECON 420", name="International Trade", level=400, min_sections=1, max_sections=2),
-        Course(code="ECON 450", name="Public Economics", level=400, min_sections=1, max_sections=1),
+        Course(code="ECON 10223", name="Intro Microeconomics", level=100, min_sections=4, max_sections=8, core_ssc=True),
+        Course(code="ECON 10233", name="Intro Macroeconomics", level=100, min_sections=4, max_sections=6, core_ssc=True),
+        Course(code="ECON 30223", name="Intermediate Microeconomics", level=300, min_sections=2, max_sections=3),
+        Course(code="ECON 30233", name="Intermediate Macroeconomics", level=300, min_sections=2, max_sections=3),
+        Course(code="ECON 30243", name="Contending Perspectives in Economics", level=300, min_sections=2, max_sections=3),
+        Course(code="ECON 40313", name="Econometrics", level=400, min_sections=1, max_sections=2, requires_lab=True),
+        Course(code="ECON 40123", name="Game Theory", level=400, min_sections=1, max_sections=1),
     ]
     db.add_all(courses)
 
     print("Seeding time slots...")
     timeslots = [
-        TimeSlot(days="MWF", start_time="09:00", end_time="09:50", label="MWF 9:00am"),
-        TimeSlot(days="MWF", start_time="10:00", end_time="10:50", label="MWF 10:00am"),
-        TimeSlot(days="MWF", start_time="11:00", end_time="11:50", label="MWF 11:00am"),
-        TimeSlot(days="MWF", start_time="13:00", end_time="13:50", label="MWF 1:00pm"),
-        TimeSlot(days="TR", start_time="09:30", end_time="10:45", label="TR 9:30am"),
-        TimeSlot(days="TR", start_time="11:00", end_time="12:15", label="TR 11:00am"),
-        TimeSlot(days="TR", start_time="13:00", end_time="14:15", label="TR 1:00pm"),
-        TimeSlot(days="TR", start_time="14:30", end_time="15:45", label="TR 2:30pm"),
+        TimeSlot(days="MWF", start_time="09:00", end_time="09:50", label="MWF 9:00-9:50"),
+        TimeSlot(days="MWF", start_time="10:00", end_time="10:50", label="MWF 10:00-10:50"),
+        TimeSlot(days="MWF", start_time="11:00", end_time="11:50", label="MWF 11:00-11:50"),
+        TimeSlot(days="MWF", start_time="13:00", end_time="13:50", label="MWF 13:00-13:50"),
+        TimeSlot(days="MWF", start_time="14:00", end_time="14:50", label="MWF 14:00-14:50"),
+        TimeSlot(days="MWF", start_time="15:00", end_time="15:50", label="MWF 15:00-15:50"),
+        TimeSlot(days="MW", start_time="14:00", end_time="15:20", label="MW 14:00-15:20"),
+        TimeSlot(days="MW", start_time="16:00", end_time="17:20", label="MW 16:00-17:20"),
+        TimeSlot(days="MW", start_time="17:30", end_time="18:50", label="MW 17:30-18:50"),
+        TimeSlot(days="TR", start_time="09:30", end_time="10:50", label="TR 9:30-10:50"),
+        TimeSlot(days="TR", start_time="11:00", end_time="12:20", label="TR 11:00-12:20"),
+        TimeSlot(days="TR", start_time="13:00", end_time="14:20", label="TR 13:00-14:20"),
+        TimeSlot(days="TR", start_time="14:30", end_time="15:50", label="TR 14:30-15:50"),
+        TimeSlot(days="TR", start_time="16:00", end_time="17:20", label="TR 16:00-17:20"),
+        TimeSlot(days="TR", start_time="17:30", end_time="18:50", label="TR 17:30-18:50"),
+        TimeSlot(days="T", start_time="18:00", end_time="20:40", label="T 18:00-20:40"),
+        TimeSlot(days="R", start_time="18:00", end_time="20:40", label="R 18:00-20:40"),
     ]
     db.add_all(timeslots)
 
