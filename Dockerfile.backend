@@ -1,0 +1,27 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system deps (OR-Tools needs C++ runtime)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc g++ libffi-dev curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the backend package
+COPY backend/ ./backend/
+
+# Copy Gmail OAuth files (mounted as a secret in production instead)
+# credentials.json is the downloaded OAuth client config from Google Cloud Console
+# token.json is auto-generated on first interactive login
+
+# Database is stored in a volume; create the directory
+RUN mkdir -p /data
+ENV DATABASE_URL=sqlite:////data/scheduler.db
+
+EXPOSE 8000
+
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

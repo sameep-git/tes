@@ -5,7 +5,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from . import models
 from .database import engine
-from .routers import health, professors
+from .routers import health, professors, courses, schedules, preferences, chat
 from .email import poll_unread_replies
 
 # Create DB tables
@@ -55,3 +55,7 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(professors.router)
+app.include_router(courses.router)
+app.include_router(schedules.router)
+app.include_router(preferences.router)
+app.include_router(chat.router)
