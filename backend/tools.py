@@ -1135,11 +1135,12 @@ def get_prime_time_config() -> str:
         c = db.query(Constraint).filter(Constraint.name == "prime_time").first()
         if not c:
             return json.dumps({"message": "No prime-time constraint configured."})
+        cfg = c.value_json or {}
         return json.dumps({
             "id": c.id, "active": c.active,
-            "start_time": c.value_json.get("start_time"),
-            "end_time": c.value_json.get("end_time"),
-            "max_percentage": c.value_json.get("max_percentage"),
+            "start_time": cfg.get("start_time"),
+            "end_time": cfg.get("end_time"),
+            "max_percentage": cfg.get("max_percentage"),
             "description": c.description,
         })
     finally:

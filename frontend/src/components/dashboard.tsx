@@ -368,7 +368,11 @@ export default function Dashboard() {
                               <TableCell>
                                 <div className="flex gap-1">
                                   {coreTags(course).map(tag => (
-                                    <Badge key={tag} variant="outline" className="text-[10px] px-1.5 py-0 bg-indigo-50 text-indigo-600 border-indigo-200">{tag}</Badge>
+                                    <Badge key={tag} variant="outline" className={`text-[10px] px-1.5 py-0 ${tag === 'SSC' ? 'bg-blue-50 text-blue-600 border-blue-200' :
+                                        tag === 'HT' ? 'bg-amber-50 text-amber-600 border-amber-200' :
+                                          tag === 'GA' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
+                                            'bg-violet-50 text-violet-600 border-violet-200'
+                                      }`}>{tag}</Badge>
                                   ))}
                                   {coreTags(course).length === 0 && <span className="text-gray-300">—</span>}
                                 </div>
