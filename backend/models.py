@@ -52,6 +52,8 @@ class TimeSlot(Base):
     start_time: Mapped[str] = mapped_column()  # e.g., "09:00"
     end_time: Mapped[str] = mapped_column()  # e.g., "09:50"
     label: Mapped[str] = mapped_column()  # e.g., "MWF 9:00am"
+    section_number: Mapped[str] = mapped_column(default="000")  # 3-digit zero-padded, e.g. "002"
+    max_classes: Mapped[int] = mapped_column(default=5)  # max sections allowed in this slot
     active: Mapped[bool] = mapped_column(default=True)
 
     sections = relationship("Section", back_populates="timeslot")
