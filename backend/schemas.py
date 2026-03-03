@@ -43,6 +43,8 @@ class TimeSlotBase(BaseModel):
     start_time: str
     end_time: str
     label: str
+    section_number: str = "000"
+    max_classes: int = 5
     active: bool = True
 
 class TimeSlotResponse(TimeSlotBase):

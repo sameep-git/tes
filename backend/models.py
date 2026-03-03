@@ -27,10 +27,10 @@ class Course(Base):
     __tablename__ = "courses"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    code: Mapped[str] = mapped_column(unique=True, index=True)  # e.g., ECON 301
+    code: Mapped[str] = mapped_column(unique=True, index=True)  # e.g. ECON 10223
     name: Mapped[str] = mapped_column()
     credits: Mapped[int] = mapped_column(default=3)
-    level: Mapped[int] = mapped_column()  # e.g., 100, 300, 400
+    level: Mapped[int] = mapped_column()  # e.g., 10000, 30000, 40000
     min_sections: Mapped[int] = mapped_column(default=1)
     max_sections: Mapped[int] = mapped_column(default=5)
     requires_lab: Mapped[bool] = mapped_column(default=False)
@@ -52,6 +52,8 @@ class TimeSlot(Base):
     start_time: Mapped[str] = mapped_column()  # e.g., "09:00"
     end_time: Mapped[str] = mapped_column()  # e.g., "09:50"
     label: Mapped[str] = mapped_column()  # e.g., "MWF 9:00am"
+    section_number: Mapped[str] = mapped_column(default="000")  # 3-digit zero-padded, e.g. "002"
+    max_classes: Mapped[int] = mapped_column(default=5)  # max sections allowed in this slot
     active: Mapped[bool] = mapped_column(default=True)
 
     sections = relationship("Section", back_populates="timeslot")

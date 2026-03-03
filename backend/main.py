@@ -6,7 +6,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from . import models
 from .database import engine
 from .routers import health, professors, courses, schedules, preferences, chat
-from .email import poll_unread_replies
+from .tools import trigger_poll_unread_replies
 
 # Create DB tables
 models.Base.metadata.create_all(bind=engine)
@@ -17,9 +17,9 @@ scheduler = BackgroundScheduler()
 def scheduled_poll():
     print("Running automatic email poll...")
     try:
-        replies = poll_unread_replies(server_mode=True)
-        if replies:
-            print(f"Automatically processed {len(replies)} new replies!")
+        # Use the full pipeline: poll → AI extract → auto-approve
+        result = trigger_poll_unread_replies(server_mode=True)
+        print(f"Auto email poll result: {result}")
     except RuntimeError as e:
         # get_gmail_service() raises RuntimeError in server_mode when the token
         # is missing or expired. Log clearly so the admin knows to re-authenticate.

@@ -80,7 +80,7 @@ def get_unreplied_professors(year: int, semester: str) -> str:
 AUTO_APPROVE_CONFIDENCE_THRESHOLD = 0.85
 
 
-def trigger_poll_unread_replies() -> str:
+def trigger_poll_unread_replies(server_mode: bool = False) -> str:
     """
     Poll the system email inbox for any unread preference replies and save them to the database.
     Pipeline:
@@ -89,7 +89,7 @@ def trigger_poll_unread_replies() -> str:
       3. Auto-approve preferences where confidence >= 0.85, on_leave=False, no admin notes
          (lower-confidence or flagged prefs stay pending for human review)
     """
-    replies = poll_unread_replies()
+    replies = poll_unread_replies(server_mode=server_mode)
 
     auto_extracted = []
     auto_approved = []
@@ -984,7 +984,9 @@ def list_timeslots() -> str:
         slots = db.query(TimeSlot).order_by(TimeSlot.days, TimeSlot.start_time).all()
         return json.dumps([{
             "id": s.id, "label": s.label, "days": s.days,
-            "start_time": s.start_time, "end_time": s.end_time, "active": s.active
+            "start_time": s.start_time, "end_time": s.end_time,
+            "section_number": s.section_number, "max_classes": s.max_classes,
+            "active": s.active
         } for s in slots])
     finally:
         db.close()
@@ -1071,17 +1073,128 @@ def send_reminder_email(prof_id: int, semester: str, year: int) -> str:
 # =========================================================================
 
 def list_constraints() -> str:
-    """List all active scheduling constraints (hard and soft rules used by the solver)."""
+    """List all scheduling constraints (hard and soft rules used by the solver)."""
     from .models import Constraint
     db = SessionLocal()
     try:
-        constraints = db.query(Constraint).filter(Constraint.active == True).all()
+        constraints = db.query(Constraint).all()
         if not constraints:
-            return json.dumps({"message": "No active constraints found."})
+            return json.dumps({"message": "No constraints found."})
         return json.dumps([{
             "id": c.id, "type": c.type, "name": c.name,
-            "description": c.description, "value_json": c.value_json
+            "description": c.description, "value_json": c.value_json,
+            "active": c.active,
         } for c in constraints])
+    finally:
+        db.close()
+
+
+def update_constraint(
+    constraint_id: int,
+    active: Optional[bool] = None,
+    value_json: Optional[dict] = None,
+    description: Optional[str] = None,
+) -> str:
+    """
+    Update an existing constraint. Use this to toggle constraints on/off,
+    change their parameters (value_json), or update descriptions.
+    """
+    from .models import Constraint
+    db = SessionLocal()
+    try:
+        c = db.query(Constraint).filter(Constraint.id == constraint_id).first()
+        if not c:
+            return json.dumps({"error": f"Constraint {constraint_id} not found."})
+        if active is not None:
+            c.active = active
+        if value_json is not None:
+            c.value_json = value_json
+        if description is not None:
+            c.description = description
+        db.commit()
+        return json.dumps({
+            "status": "success",
+            "id": c.id, "name": c.name, "active": c.active,
+            "value_json": c.value_json,
+        })
+    except Exception as e:
+        db.rollback()
+        return json.dumps({"error": str(e)})
+    finally:
+        db.close()
+
+
+def get_prime_time_config() -> str:
+    """
+    Get the current prime-time constraint configuration.
+    Returns start_time, end_time, max_percentage, and whether it is active.
+    """
+    from .models import Constraint
+    db = SessionLocal()
+    try:
+        c = db.query(Constraint).filter(Constraint.name == "prime_time").first()
+        if not c:
+            return json.dumps({"message": "No prime-time constraint configured."})
+        cfg = c.value_json or {}
+        return json.dumps({
+            "id": c.id, "active": c.active,
+            "start_time": cfg.get("start_time"),
+            "end_time": cfg.get("end_time"),
+            "max_percentage": cfg.get("max_percentage"),
+            "description": c.description,
+        })
+    finally:
+        db.close()
+
+
+def update_prime_time_config(
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
+    max_percentage: Optional[int] = None,
+    active: Optional[bool] = None,
+) -> str:
+    """
+    Update the prime-time constraint parameters. Only provided fields are changed.
+    - start_time / end_time: HH:MM format (e.g. "09:00", "14:00")
+    - max_percentage: 0-100, the max % of total sections allowed in the window
+    - active: True/False to enable/disable the constraint entirely
+    """
+    from .models import Constraint
+    db = SessionLocal()
+    try:
+        c = db.query(Constraint).filter(Constraint.name == "prime_time").first()
+        if not c:
+            # Auto-create if not seeded yet
+            c = Constraint(
+                type="hard",
+                name="prime_time",
+                value_json={"start_time": "09:00", "end_time": "14:00", "max_percentage": 60},
+                description="Prime-time cap",
+                active=True,
+            )
+            db.add(c)
+
+        cfg = dict(c.value_json or {})
+        if start_time is not None:
+            cfg["start_time"] = start_time
+        if end_time is not None:
+            cfg["end_time"] = end_time
+        if max_percentage is not None:
+            cfg["max_percentage"] = max_percentage
+        c.value_json = cfg
+        if active is not None:
+            c.active = active
+        db.commit()
+        return json.dumps({
+            "status": "success",
+            "active": c.active,
+            "start_time": cfg["start_time"],
+            "end_time": cfg["end_time"],
+            "max_percentage": cfg["max_percentage"],
+        })
+    except Exception as e:
+        db.rollback()
+        return json.dumps({"error": str(e)})
     finally:
         db.close()
 
@@ -1130,6 +1243,10 @@ ALL_TOOLS = [
     delete_course,
     # Timeslots
     toggle_timeslot,
+    # Constraints
+    update_constraint,
+    get_prime_time_config,
+    update_prime_time_config,
 ]
 
 TOOL_REGISTRY = {func.__name__: func for func in ALL_TOOLS}

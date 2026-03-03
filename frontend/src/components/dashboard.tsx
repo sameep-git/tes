@@ -298,10 +298,12 @@ export default function Dashboard() {
                               <TableCell>{prof.office ?? '—'}</TableCell>
                               <TableCell>
                                 <Badge variant="outline" className={
-                                  prof.rank === 'Tenured' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                                    prof.rank === 'Tenure-Track' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
-                                      prof.rank === 'Visiting' ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                                        'bg-gray-50 text-gray-700 border-gray-200'
+                                  prof.rank.includes('Visiting') ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                                    prof.rank.includes('Assistant Professor') ? 'bg-violet-50 text-violet-700 border-violet-200' :
+                                      prof.rank.includes('Associate Professor') ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                                        prof.rank.includes('Professor') ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                          prof.rank.includes('Instructor') ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                            'bg-gray-50 text-gray-700 border-gray-200'
                                 }>
                                   {prof.rank}
                                 </Badge>
@@ -354,8 +356,8 @@ export default function Dashboard() {
                               <TableCell>{course.name}</TableCell>
                               <TableCell>
                                 <Badge variant="outline" className={
-                                  course.level >= 400 ? 'bg-red-50 text-red-700 border-red-200' :
-                                    course.level >= 300 ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                                  course.level >= 40000 ? 'bg-red-50 text-red-700 border-red-200' :
+                                    course.level >= 30000 ? 'bg-orange-50 text-orange-700 border-orange-200' :
                                       'bg-green-50 text-green-700 border-green-200'
                                 }>
                                   {course.level}
@@ -366,7 +368,11 @@ export default function Dashboard() {
                               <TableCell>
                                 <div className="flex gap-1">
                                   {coreTags(course).map(tag => (
-                                    <Badge key={tag} variant="outline" className="text-[10px] px-1.5 py-0 bg-indigo-50 text-indigo-600 border-indigo-200">{tag}</Badge>
+                                    <Badge key={tag} variant="outline" className={`text-[10px] px-1.5 py-0 ${tag === 'SSC' ? 'bg-blue-50 text-blue-600 border-blue-200' :
+                                        tag === 'HT' ? 'bg-amber-50 text-amber-600 border-amber-200' :
+                                          tag === 'GA' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
+                                            'bg-violet-50 text-violet-600 border-violet-200'
+                                      }`}>{tag}</Badge>
                                   ))}
                                   {coreTags(course).length === 0 && <span className="text-gray-300">—</span>}
                                 </div>

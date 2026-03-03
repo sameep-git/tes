@@ -112,6 +112,45 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
         if ga_sections: model.Add(sum(ga_sections) >= 1)
         if wem_sections: model.Add(sum(wem_sections) >= 1)
 
+        # E. Timeslot Capacity
+        # Each timeslot has a max_classes cap (e.g. only 5 rooms available at that hour)
+        for t in timeslots:
+            classes_in_slot = [assign[(p.id, c.id, t.id)] for p in professors for c in courses]
+            model.Add(sum(classes_in_slot) <= t.max_classes)
+
+        # F. Prime-Time Cap (configurable via Constraint table)
+        # Limits what percentage of total sections can start during the prime window
+        from .models import Constraint
+        prime_row = db.query(Constraint).filter(
+            Constraint.name == "prime_time", Constraint.active == True
+        ).first()
+        if prime_row and prime_row.value_json:
+            cfg = prime_row.value_json
+            pt_start = cfg.get("start_time", "09:00")
+            pt_end = cfg.get("end_time", "14:00")
+            max_pct = cfg.get("max_percentage", 60)
+
+            prime_slots = [t for t in timeslots if pt_start <= t.start_time < pt_end]
+            if prime_slots:
+                prime_vars = [assign[(p.id, c.id, t.id)]
+                              for p in professors for c in courses for t in prime_slots]
+                all_vars = [assign[(p.id, c.id, t.id)]
+                            for p in professors for c in courses for t in timeslots]
+                # Linearized: prime_count * 100 <= max_pct * total_count
+                model.Add(sum(prime_vars) * 100 <= max_pct * sum(all_vars))
+
+        # G. Blocked Timeslots (configurable via Constraint table)
+        # Completely prevents scheduling in specific timeslots
+        blocked_row = db.query(Constraint).filter(
+            Constraint.name == "blocked_timeslots", Constraint.active == True
+        ).first()
+        if blocked_row and blocked_row.value_json:
+            blocked_labels = set(blocked_row.value_json.get("labels", []))
+            for t in timeslots:
+                if t.label in blocked_labels:
+                    for p in professors:
+                        for c in courses:
+                            model.Add(assign[(p.id, c.id, t.id)] == 0)
 
         # 5. SOFT CONSTRAINTS (Objective Function)
         objective_terms = []
