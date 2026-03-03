@@ -1,13 +1,78 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Send, Bot, User, Loader2, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-export default function ChatPanel({ onDone }: { onDone?: () => void }) {
+// Helper component that allows click-and-drag horizontal scrolling
+function DragToScrollWrapper({ children }: { children: React.ReactNode }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [startX, setStartX] = useState(0);
+  const [scrollLeft, setScrollLeft] = useState(0);
+
+  const onMouseDown = (e: React.MouseEvent) => {
+    if (!scrollRef.current) return;
+    setIsDragging(true);
+    setStartX(e.pageX - scrollRef.current.offsetLeft);
+    setScrollLeft(scrollRef.current.scrollLeft);
+  };
+
+  const onMouseLeave = () => {
+    setIsDragging(false);
+  };
+
+  const onMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const onMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging || !scrollRef.current) return;
+    e.preventDefault();
+    const x = e.pageX - scrollRef.current.offsetLeft;
+    const walk = (x - startX) * 1.5; // Scroll speed multiplier
+    scrollRef.current.scrollLeft = scrollLeft - walk;
+  };
+
+  return (
+    <div
+      ref={scrollRef}
+      className={`overflow-x-auto my-2 rounded cursor-grab [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] ${isDragging ? 'active:cursor-grabbing' : ''}`}
+      onMouseDown={onMouseDown}
+      onMouseLeave={onMouseLeave}
+      onMouseUp={onMouseUp}
+      onMouseMove={onMouseMove}
+    >
+      <table className="border-collapse text-xs w-full select-none">{children}</table>
+    </div>
+  );
+}
+
+// Memoized message component prevents the markdown/tables from re-rendering (and losing scroll state)
+// when the parent component updates (like when typing in the input box).
+const MemoizedMarkdown = React.memo(({ content }: { content: string }) => {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        table: ({ children }) => <DragToScrollWrapper>{children}</DragToScrollWrapper>,
+        th: ({ children }) => (
+          <th className="border border-gray-300 bg-gray-200 px-2 py-1 text-left font-semibold whitespace-nowrap">{children}</th>
+        ),
+        td: ({ children }) => (
+          <td className="border border-gray-300 px-2 py-1 whitespace-nowrap">{children}</td>
+        ),
+      }}
+    >{content}</ReactMarkdown>
+  );
+});
+
+export default function ChatPanel() {
+  const queryClient = useQueryClient();
   const [messages, setMessages] = useState<{ role: string; content: string }[]>([
     { role: 'assistant', content: 'Hello Dr. Hawley. The Fall 2025 scheduling cycle is active. How can I help you today?' }
   ]);
@@ -17,6 +82,16 @@ export default function ChatPanel({ onDone }: { onDone?: () => void }) {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Cleanup abort controller on unmount
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -37,6 +112,12 @@ export default function ChatPanel({ onDone }: { onDone?: () => void }) {
     // Add user message and an empty assistant placeholder in one update
     setMessages(prev => [...prev, { role: 'user', content: userMessage }, { role: 'assistant', content: '' }]);
 
+    // Abort any currently running stream
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+
     try {
       const apiBase = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
       const adminToken = process.env.NEXT_PUBLIC_ADMIN_TOKEN;
@@ -50,6 +131,7 @@ export default function ChatPanel({ onDone }: { onDone?: () => void }) {
           message: userMessage,
           history: messages.filter(m => m.content.trim() !== ''),
         }),
+        signal: abortControllerRef.current.signal,
       });
 
       if (!response.body) throw new Error("No body returned");
@@ -98,9 +180,10 @@ export default function ChatPanel({ onDone }: { onDone?: () => void }) {
               } else if (data.type === 'done') {
                 setIsThinking(false);
                 setActiveTool(null);
-                // Defer onDone so the final chat message state update fully
-                // commits before fetchAll triggers a Dashboard re-render.
-                if (onDone) setTimeout(onDone, 0);
+                // Defer invalidation so React finishes committing the final
+                // chat message state update before TanStack Query triggers
+                // background refetches (which flush their own state updates).
+                setTimeout(() => queryClient.invalidateQueries(), 0);
               }
             } catch {
               // Ignore malformed JSON chunks
@@ -108,7 +191,9 @@ export default function ChatPanel({ onDone }: { onDone?: () => void }) {
           }
         }
       }
-    } catch (error) {
+    } catch (error: any) {
+      if (error.name === 'AbortError') return; // Ignore intentional aborts
+
       console.error('Chat error:', error);
       setMessages(prev => {
         const updated = [...prev];
@@ -150,22 +235,7 @@ export default function ChatPanel({ onDone }: { onDone?: () => void }) {
                 <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${msg.role === 'user' ? 'bg-gray-800 text-white rounded-tr-none' : 'bg-gray-100 text-gray-800 rounded-tl-none'}`}>
                   {msg.role === 'assistant' ? (
                     <div className="chat-markdown">
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                          table: ({ children }) => (
-                            <div className="overflow-x-auto my-2 rounded cursor-grab active:cursor-grabbing [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                              <table className="border-collapse text-xs w-full">{children}</table>
-                            </div>
-                          ),
-                          th: ({ children }) => (
-                            <th className="border border-gray-300 bg-gray-200 px-2 py-1 text-left font-semibold whitespace-nowrap">{children}</th>
-                          ),
-                          td: ({ children }) => (
-                            <td className="border border-gray-300 px-2 py-1 whitespace-nowrap">{children}</td>
-                          ),
-                        }}
-                      >{msg.content}</ReactMarkdown>
+                      <MemoizedMarkdown content={msg.content} />
                     </div>
                   ) : (
                     <span className="whitespace-pre-wrap">{msg.content}</span>

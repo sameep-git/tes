@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -11,64 +12,18 @@ import {
 } from '@/components/ui/dialog';
 import { AlertCircle, CheckCircle2, Clock, Eye, Loader2 } from 'lucide-react';
 import ChatPanel from './chat-panel';
-
-const API = 'http://localhost:8000/api';
-
-interface Professor {
-  id: number;
-  name: string;
-  email: string;
-  office: string | null;
-  rank: string;
-  max_sections: number;
-  active: boolean;
-}
-
-interface Course {
-  id: number;
-  code: string;
-  name: string;
-  credits: number;
-  level: number;
-  min_sections: number;
-  max_sections: number;
-  requires_lab: boolean;
-  core_ssc: boolean;
-  core_ht: boolean;
-  core_ga: boolean;
-  core_wem: boolean;
-}
-
-interface Section {
-  id: number;
-  course_code: string | null;
-  course_name: string | null;
-  professor_name: string | null;
-  timeslot_label: string | null;
-  status: string;
-}
-
-interface Schedule {
-  id: number;
-  semester: string;
-  year: number;
-  status: string;
-  finalized_at: string | null;
-  sections: Section[];
-}
-
-interface Preference {
-  id: number;
-  professor_id: number;
-  semester: string;
-  year: number;
-  raw_email: string | null;
-  parsed_json: Record<string, unknown> | null;
-  confidence: number | null;
-  admin_approved: boolean;
-  received_at: string;
-  professor: { id: number; name: string; email: string } | null;
-}
+import {
+  queryKeys,
+  fetchProfessors,
+  fetchCourses,
+  fetchSchedules,
+  fetchPreferences,
+  approvePreference,
+  type Professor,
+  type Course,
+  type Schedule,
+  type Preference,
+} from '@/lib/api';
 
 // ---- Preference Detail Dialog ----
 function PreferenceDetailDialog({
@@ -83,7 +38,6 @@ function PreferenceDetailDialog({
   const profName = pref.professor?.name ?? `Prof #${pref.professor_id}`;
   const parsed = pref.parsed_json as Record<string, unknown> | null;
 
-  // Helper to render a preference field row
   const Field = ({ label, value }: { label: string; value: unknown }) => {
     if (value === null || value === undefined) return null;
     if (Array.isArray(value) && value.length === 0) return null;
@@ -117,7 +71,6 @@ function PreferenceDetailDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Parsed Preference JSON */}
         {parsed ? (
           <div className="mt-4">
             <h3 className="text-sm font-semibold text-gray-700 mb-2">Extracted Preferences</h3>
@@ -146,7 +99,6 @@ function PreferenceDetailDialog({
           </div>
         )}
 
-        {/* Raw Email */}
         {pref.raw_email && (
           <div className="mt-4">
             <h3 className="text-sm font-semibold text-gray-700 mb-2">Raw Email</h3>
@@ -162,52 +114,22 @@ function PreferenceDetailDialog({
 
 // ---- Main Dashboard ----
 export default function Dashboard() {
-  const [professors, setProfessors] = useState<Professor[]>([]);
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [schedules, setSchedules] = useState<Schedule[]>([]);
-  const [preferences, setPreferences] = useState<Preference[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [approvingId, setApprovingId] = useState<number | null>(null);
+  const queryClient = useQueryClient();
   const [viewingPref, setViewingPref] = useState<Preference | null>(null);
 
-  const fetchAll = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [profRes, courseRes, schedRes, prefRes] = await Promise.all([
-        fetch(`${API}/professors`),
-        fetch(`${API}/courses`),
-        fetch(`${API}/schedules`),
-        fetch(`${API}/preferences`),
-      ]);
-      setProfessors(await profRes.json());
-      setCourses(await courseRes.json());
-      setSchedules(await schedRes.json());
-      setPreferences(await prefRes.json());
-    } catch (err) {
-      console.error('Failed to fetch data:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // ---- TanStack Query hooks — each tab has its own independent loading state ----
+  const { data: professors = [], isLoading: profsLoading } = useQuery({ queryKey: queryKeys.professors, queryFn: fetchProfessors });
+  const { data: courses = [], isLoading: coursesLoading } = useQuery({ queryKey: queryKeys.courses, queryFn: fetchCourses });
+  const { data: schedules = [], isLoading: schedsLoading } = useQuery({ queryKey: queryKeys.schedules, queryFn: fetchSchedules });
+  const { data: preferences = [], isLoading: prefsLoading } = useQuery({ queryKey: queryKeys.preferences, queryFn: fetchPreferences });
 
-  useEffect(() => {
-    fetchAll();
-  }, [fetchAll]);
-
-  const handleApprove = async (prefId: number) => {
-    setApprovingId(prefId);
-    try {
-      const res = await fetch(`${API}/preferences/${prefId}/approve`, { method: 'PUT' });
-      if (res.ok) {
-        const updated = await res.json();
-        setPreferences(prev => prev.map(p => (p.id === prefId ? updated : p)));
-      }
-    } catch (err) {
-      console.error('Failed to approve:', err);
-    } finally {
-      setApprovingId(null);
-    }
-  };
+  // ---- Mutation: approve preference ----
+  const approveMutation = useMutation({
+    mutationFn: approvePreference,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.preferences });
+    },
+  });
 
   const pendingCount = preferences.filter(p => !p.admin_approved).length;
 
@@ -272,13 +194,14 @@ export default function Dashboard() {
                       </div>
                     </div>
                   )}
-                  {!loading && preferences.length === 0 && (
+                  {prefsLoading ? (
+                    <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+                  ) : preferences.length === 0 ? (
                     <div className="text-center py-12 text-gray-400">
                       <p className="text-lg font-medium">No preferences received yet</p>
                       <p className="text-sm mt-1">Preference emails from professors will appear here once polled.</p>
                     </div>
-                  )}
-                  {preferences.length > 0 && (
+                  ) : (
                     <div className="border rounded-md">
                       <Table>
                         <TableHeader>
@@ -311,7 +234,6 @@ export default function Dashboard() {
                               <TableCell className="text-xs text-gray-500">{new Date(pref.received_at).toLocaleDateString()}</TableCell>
                               <TableCell className="text-right">
                                 <div className="flex items-center justify-end gap-2">
-                                  {/* View button — always shown */}
                                   <Button
                                     size="sm"
                                     variant="ghost"
@@ -321,16 +243,15 @@ export default function Dashboard() {
                                     <Eye className="w-3.5 h-3.5 mr-1" />
                                     View
                                   </Button>
-                                  {/* Approve button — pending only */}
                                   {!pref.admin_approved && (
                                     <Button
                                       size="sm"
                                       variant="outline"
                                       className="text-green-700 border-green-300 hover:bg-green-50"
-                                      disabled={approvingId === pref.id}
-                                      onClick={() => handleApprove(pref.id)}
+                                      disabled={approveMutation.isPending}
+                                      onClick={() => approveMutation.mutate(pref.id)}
                                     >
-                                      {approvingId === pref.id ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
+                                      {approveMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
                                       Approve
                                     </Button>
                                   )}
@@ -354,7 +275,7 @@ export default function Dashboard() {
                   <CardDescription>{professors.length} professors in the system</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {loading ? (
+                  {profsLoading ? (
                     <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
                   ) : (
                     <div className="border rounded-md">
@@ -410,7 +331,7 @@ export default function Dashboard() {
                   <CardDescription>{courses.length} courses in the system</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {loading ? (
+                  {coursesLoading ? (
                     <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
                   ) : (
                     <div className="border rounded-md">
@@ -469,7 +390,7 @@ export default function Dashboard() {
                   <CardDescription>{schedules.length} schedule(s) in the system</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {loading ? (
+                  {schedsLoading ? (
                     <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
                   ) : schedules.length === 0 ? (
                     <div className="text-center py-12 text-gray-400">
@@ -527,9 +448,9 @@ export default function Dashboard() {
         </main>
       </div>
 
-      {/* Right Side: AI Agent Chat */}
+      {/* Right Side: AI Agent Chat — no more onDone prop needed */}
       <div className="w-[450px] flex-shrink-0 bg-white shadow-xl z-10 flex flex-col overflow-hidden">
-        <ChatPanel onDone={fetchAll} />
+        <ChatPanel />
       </div>
     </div>
   );
