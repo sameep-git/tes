@@ -120,12 +120,10 @@ export default function ChatPanel() {
 
     try {
       const apiBase = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
-      const adminToken = process.env.NEXT_PUBLIC_ADMIN_TOKEN;
       const response = await fetch(`${apiBase}/api/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(adminToken ? { 'Authorization': `Bearer ${adminToken}` } : {}),
         },
         body: JSON.stringify({
           message: userMessage,

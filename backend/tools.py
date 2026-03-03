@@ -698,6 +698,12 @@ def approve_preference(pref_id: int) -> str:
     whether the system is now ready to run the solver.
     """
     db = SessionLocal()
+    # Capture these before db.close() — after close() the ORM instance is
+    # detached and accessing its attributes raises DetachedInstanceError.
+    pref_semester: str | None = None
+    pref_year: int | None = None
+    prof_name: str = f"Prof #{pref_id}"
+
     try:
         pref = db.query(Preference).filter(Preference.id == pref_id).first()
         if not pref:
@@ -709,6 +715,10 @@ def approve_preference(pref_id: int) -> str:
         pref.admin_approved = True
         db.commit()
 
+        # Capture scalar values before the session is closed
+        pref_semester = pref.semester
+        pref_year = pref.year
+
         prof = db.query(Professor).filter(Professor.id == pref.professor_id).first()
         prof_name = prof.name if prof else f"Prof #{pref.professor_id}"
     except Exception as e:
@@ -718,7 +728,7 @@ def approve_preference(pref_id: int) -> str:
         db.close()
 
     # Auto-run preflight so the AI can tell the user if they're ready to run the solver
-    preflight_result = run_preflight_checks(semester=pref.semester, year=pref.year)
+    preflight_result = run_preflight_checks(semester=pref_semester, year=pref_year)
 
     return json.dumps({
         "status": "success",

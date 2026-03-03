@@ -74,15 +74,6 @@ async def chat_endpoint(request: Request):
     Handles streaming chat interactions with Gemini using Server-Sent Events (SSE).
     Allows the frontend to see real-time tool execution logs before seeing the final text.
     """
-    # --- Auth check ---
-    admin_token = os.getenv("TES_ADMIN_TOKEN", "")
-    if admin_token:
-        auth_header = request.headers.get("Authorization", "")
-        provided = auth_header.removeprefix("Bearer ").strip()
-        if provided != admin_token:
-            from fastapi.responses import JSONResponse
-            return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
-
     if not client:
         return StreamingResponse(
             iter(["data: " + json.dumps({"type": "error", "content": "GEMINI_API_KEY missing"}) + "\n\n"]),
