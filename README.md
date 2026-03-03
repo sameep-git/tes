@@ -7,7 +7,7 @@ An AI-powered scheduling system for the TCU Economics department. The AI agent m
 ## Architecture
 
 ```
-frontend/   Next.js 15 dashboard + AI chat panel
+frontend/   Next.js 16 dashboard + AI chat panel (TanStack Query for data fetching)
 backend/    FastAPI + SQLAlchemy + OR-Tools solver
             └─ Gmail API for email send/receive
             └─ Gemini AI for preference extraction + agent chat
@@ -79,7 +79,7 @@ The system uses the Gmail API to send preference request emails and poll for rep
    A browser window will open — log in with the department Gmail account.
 4. `token.json` is now saved at the project root. The backend uses it for all future API calls.
 
-> **Docker:** Mount both files as shown in `docker-compose.yml`. The token auto-refreshes; no need to re-run the flow unless access is revoked.
+> **Docker:** Mount both files as shown in `docker-compose.yml`. The token auto-refreshes (mounted writable); no need to re-run the flow unless access is revoked.
 
 ---
 
@@ -92,7 +92,7 @@ The system uses the Gmail API to send preference request emails and poll for rep
 
 ---
 
-## AI Agent Capabilities (31 tools)
+## AI Agent Capabilities (32 tools)
 
 The chat panel talks to a Gemini agent with full tool access:
 
@@ -105,11 +105,13 @@ The chat panel talks to a Gemini agent with full tool access:
 | **Preferences** | poll inbox, view, list all, extract JSON, create manually, approve, unapprove, delete |
 | **Solver** | preflight checks, run solver, finalize schedule, delete draft, get stats |
 | **Constraints** | list active constraints |
+| **Guardrails** | run preflight checks, create manual preference, approve preference |
 
 ### Automatic pipelines
 - **Poll → Extract → Auto-approve**: When the inbox is polled, replies are immediately AI-parsed. High-confidence preferences (≥ 85%, no leave, no admin notes) are auto-approved.
 - **Approve → Preflight**: After any approval, the agent immediately reports whether the system is ready to run the solver.
 - The agent never asks you for IDs — it looks them up by name using its tools.
+- Up to 5 rounds of tool-calling per message (multi-hop reasoning).
 
 ---
 
@@ -121,12 +123,12 @@ backend/
   models.py        SQLAlchemy ORM models
   schemas.py       Pydantic request/response schemas
   database.py      DB session setup
-  tools.py         All 31 AI-callable tool functions
+  tools.py         All 32 AI-callable tool functions
   email.py         Gmail API send/poll logic
   ai.py            Preference extraction via Gemini
   solver.py        OR-Tools constraint solver
   routers/
-    chat.py        Streaming AI chat endpoint
+    chat.py        Streaming AI chat endpoint (SSE, multi-round tool loop)
     professors.py  Professor CRUD API
     courses.py     Course listing API
     preferences.py Preference listing + approval API
@@ -135,10 +137,14 @@ backend/
 
 frontend/
   src/
-    app/           Next.js app router
+    app/
+      layout.tsx     Root layout — wraps app in QueryClientProvider
+    lib/
+      api.ts         Shared API fetch functions, query keys, and TypeScript interfaces
     components/
-      dashboard.tsx  Main dashboard (professors, courses, schedules, preferences)
-      chat-panel.tsx Streaming AI chat with markdown rendering
+      providers.tsx  TanStack Query provider (30s stale time, background refetch)
+      dashboard.tsx  Main dashboard — independent per-tab data loading via useQuery
+      chat-panel.tsx Streaming AI chat with markdown + drag-to-scroll table rendering
 ```
 
 ---
@@ -155,4 +161,5 @@ To disable, remove the `scheduler.add_job(...)` call in `backend/main.py`.
 
 - `credentials.json` and `token.json` contain sensitive OAuth credentials — **never commit them to git** (they are already in `.gitignore`)
 - `GEMINI_API_KEY` should be in `.env` only — **never hardcode it**
+- For production, protect the `/api/chat` endpoint through network-level access control (firewall, VPN, reverse proxy auth) or a proper authentication provider.
 - The current SQLite setup is single-user; for multi-user deployment consider PostgreSQL + a distributed lock for the email scheduler
