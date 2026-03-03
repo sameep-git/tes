@@ -45,6 +45,17 @@ export interface Schedule {
     sections: Section[];
 }
 
+export interface TimeSlot {
+    id: number;
+    days: string;
+    start_time: string;
+    end_time: string;
+    label: string;
+    section_number: string;
+    max_classes: number;
+    active: boolean;
+}
+
 export interface Preference {
     id: number;
     professor_id: number;
@@ -72,8 +83,9 @@ const API = `${API_BASE}/api`;
 export const queryKeys = {
     professors: ['professors'] as const,
     courses: ['courses'] as const,
-    schedules: ['schedules'] as const,
-    preferences: ['preferences'] as const,
+    timeslots: ['timeslots'] as const,
+    schedules: (semester: string, year: number) => ['schedules', semester, year] as const,
+    preferences: (semester: string, year: number) => ['preferences', semester, year] as const,
 };
 
 // ---------------------------------------------------------------------------
@@ -87,8 +99,13 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
 
 export const fetchProfessors = (): Promise<Professor[]> => fetch(`${API}/professors`).then(r => jsonOrThrow<Professor[]>(r));
 export const fetchCourses = (): Promise<Course[]> => fetch(`${API}/courses`).then(r => jsonOrThrow<Course[]>(r));
-export const fetchSchedules = (): Promise<Schedule[]> => fetch(`${API}/schedules`).then(r => jsonOrThrow<Schedule[]>(r));
-export const fetchPreferences = (): Promise<Preference[]> => fetch(`${API}/preferences`).then(r => jsonOrThrow<Preference[]>(r));
+export const fetchTimeslots = (): Promise<TimeSlot[]> => fetch(`${API}/timeslots`).then(r => jsonOrThrow<TimeSlot[]>(r));
+
+export const fetchSchedules = (semester: string, year: number): Promise<Schedule[]> =>
+    fetch(`${API}/schedules?semester=${encodeURIComponent(semester)}&year=${year}`).then(r => jsonOrThrow<Schedule[]>(r));
+
+export const fetchPreferences = (semester: string, year: number): Promise<Preference[]> =>
+    fetch(`${API}/preferences?semester=${encodeURIComponent(semester)}&year=${year}`).then(r => jsonOrThrow<Preference[]>(r));
 
 // ---------------------------------------------------------------------------
 // Mutations
@@ -96,5 +113,17 @@ export const fetchPreferences = (): Promise<Preference[]> => fetch(`${API}/prefe
 
 export async function approvePreference(prefId: number): Promise<Preference> {
     const res = await fetch(`${API}/preferences/${prefId}/approve`, { method: 'PUT' });
+    return jsonOrThrow<Preference>(res);
+}
+
+export async function updatePreferenceParsedJson(
+    prefId: number,
+    parsedJson: Record<string, unknown>,
+): Promise<Preference> {
+    const res = await fetch(`${API}/preferences/${prefId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parsed_json: parsedJson }),
+    });
     return jsonOrThrow<Preference>(res);
 }

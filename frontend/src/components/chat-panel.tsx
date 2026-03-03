@@ -74,7 +74,7 @@ const MemoizedMarkdown = React.memo(({ content }: { content: string }) => {
 export default function ChatPanel() {
   const queryClient = useQueryClient();
   const [messages, setMessages] = useState<{ role: string; content: string }[]>([
-    { role: 'assistant', content: 'Hello Dr. Hawley. The Fall 2025 scheduling cycle is active. How can I help you today?' }
+    { role: 'assistant', content: "Hello! I'm the TES scheduling agent. I can help you manage professors, courses, preferences, timeslots, and generate schedules. What would you like to do?" }
   ]);
   const [input, setInput] = useState('');
   const [isThinking, setIsThinking] = useState(false);
