@@ -8,57 +8,86 @@ def seed_db():
     
     db = SessionLocal()
     
-    # Check if we already have data
-    if db.query(Professor).first():
-        print("Database already seeded. Skipping...")
-        db.close()
-        return
+    print("Clearing old data...")
+    db.query(Constraint).delete()
+    db.query(TimeSlot).delete()
+    db.query(Course).delete()
+    db.query(Professor).delete()
+    db.commit()
 
     print("Seeding professors...")
     professors = [
-        Professor(name="Rishav Bista",      email="r.bista@tcu.edu",         rank="Associate Professor",                         max_sections=3),
-        Professor(name="Douglas Butler",    email="d.butler@tcu.edu",         rank="Instructor I",                                max_sections=4),
-        Professor(name="Michael Butler",    email="m.butler@tcu.edu",         rank="Associate Professor",                         max_sections=3),
-        Professor(name="Dawn Elliott",      email="d.elliott@tcu.edu",        rank="Associate Professor and Department Chair",     max_sections=2),
-        Professor(name="Rosemarie Fike",    email="rosemarie.fike@tcu.edu",   rank="Instructor II",                               max_sections=4),
-        Professor(name="Graham Gardner",    email="graham.gardner@tcu.edu",   rank="Assistant Professor",                         max_sections=3),
-        Professor(name="Robert Garnett",    email="r.garnett@tcu.edu",        rank="Professor",                                   max_sections=3),
-        Professor(name="Stepan Gordeev",    email="s.gordeev@tcu.edu",        rank="Assistant Professor",                         max_sections=2),
-        Professor(name="John T. Harvey",    email="j.harvey@tcu.edu",         rank="Hal Wright Professor of Economics",           max_sections=3),
-        Professor(name="Zackary Hawley",    email="z.hawley@tcu.edu",         rank="Professor",                                   max_sections=3),
-        Professor(name="Weiwei Liu",        email="w.liu1236@tcu.edu",        rank="Associate Professor",                         max_sections=3),
-        Professor(name="John Lovett",       email="j.lovett@tcu.edu",         rank="Senior Instructor",                           max_sections=4),
-        Professor(name="Stephen Nicar",     email="s.nicar@tcu.edu",          rank="Instructor I",                                max_sections=4),
-        Professor(name="Stephen Quinn",     email="s.quinn@tcu.edu",          rank="Professor",                                   max_sections=3),
-        Professor(name="Kiril Tochkov",     email="k.tochkov@tcu.edu",        rank="Professor",                                   max_sections=3),
-        Professor(name="Isabella Yerby",    email="i.yerby@tcu.edu",          rank="Instructor I",                                max_sections=4),
-        Professor(name="Xiaodan Zhao",      email="xiaodan.zhao@tcu.edu",     rank="Visiting Assistant Professor",                max_sections=2),
-        Professor(name="Prof. Shah",        email="sameep.shah@tcu.edu",      rank="Adjunct",                                     max_sections=2),
+        Professor(name="Graham Gardner", email="graham.gardner@tcu.edu", rank="Assistant Professor", max_sections=3),
+        Professor(name="Stepan Gordeev", email="s.gordeev@tcu.edu", rank="Assistant Professor", max_sections=3),
+        Professor(name="Maxwell Bullard", email="m.bullard@tcu.edu", rank="Assistant Professor", max_sections=3),
+        Professor(name="Haley Wilbert", email="h.wilbert@tcu.edu", rank="Assistant Professor", max_sections=3),
+        Professor(name="Rishav Bista", email="r.bista@tcu.edu", rank="Associate Professor", max_sections=3),
+        Professor(name="Dawn C. Elliott", email="d.elliott@tcu.edu", rank="Associate Professor", max_sections=3),
+        Professor(name="Weiwei Liu", email="w.liu1236@tcu.edu", rank="Associate Professor", max_sections=3),
+        Professor(name="Robert F. Garnett", email="r.garnett@tcu.edu", rank="Professor", max_sections=3),
+        Professor(name="John T. Harvey", email="j.harvey@tcu.edu", rank="Professor", max_sections=3),
+        Professor(name="Zackary B. Hawley", email="z.hawley@tcu.edu", rank="Professor", max_sections=3),
+        Professor(name="Stephen Quinn", email="s.quinn@tcu.edu", rank="Professor", max_sections=3),
+        Professor(name="Kiril Tochkov", email="k.tochkov@tcu.edu", rank="Professor", max_sections=3),
+        Professor(name="Isabella Yerby", email="i.yerby@tcu.edu", rank="Instructor I", max_sections=4),
+        Professor(name="Douglas Glenn Butler", email="d.butler@tcu.edu", rank="Instructor I", max_sections=4),
+        Professor(name="Stephen Nicar", email="s.nicar@tcu.edu", rank="Instructor I", max_sections=4),
+        Professor(name="Rosemarie Fike", email="rosemarie.fike@tcu.edu", rank="Instructor II", max_sections=4),
+        Professor(name="Xiaodan Zhao", email="xiaodan.zhao@tcu.edu", rank="Adjunct", max_sections=2),
+        Professor(name="Lee Bailiff", email="lee.bailiff@tcu.edu", rank="Adjunct", max_sections=2),
+        Professor(name="Horacio Cocchi", email="h.cocchi@tcu.edu", rank="Adjunct", max_sections=2),
+        Professor(name="John Powers", email="john.powers@tcu.edu", rank="Adjunct", max_sections=2),
+        Professor(name="Julie Russell", email="julie.russell@tcu.edu", rank="Adjunct", max_sections=2),
+        Professor(name="Justin Sheffield", email="j.b.sheffield@tcu.edu", rank="Adjunct", max_sections=2),
+        Professor(name="Jill Trask", email="j.trask@tcu.edu", rank="Adjunct", max_sections=2),
     ]
     db.add_all(professors)
 
     print("Seeding courses...")
     courses = [
-        # 10000 level courses
+        # 10000 level courses (Intros)
         Course(code="ECON 10223", name="Intro Microeconomics", level=10000, min_sections=4, max_sections=8, core_ssc=True),
         Course(code="ECON 10233", name="Intro Macroeconomics", level=10000, min_sections=4, max_sections=8, core_ssc=True),
+        Course(code="ECON 10223", name="Intro Micro - Honors", level=10000, min_sections=1, max_sections=2, core_ssc=True),
+        Course(code="ECON 10233", name="Intro Macro - Honors", level=10000, min_sections=1, max_sections=2, core_ssc=True),
 
-        # 30000 level courses
+        # 30000 level courses (Foundations & Electives)
         Course(code="ECON 30223", name="Intermediate Microeconomics", level=30000, min_sections=2, max_sections=3),
-        Course(code="ECON 31223", name="Intermediate Microeconomics: Math Approach", level=30000, min_sections=1, max_sections=2),
+        Course(code="ECON 31223", name="Intermediate Micro: Math Approach", level=30000, min_sections=1, max_sections=2),
         Course(code="ECON 30233", name="Intermediate Macroeconomics", level=30000, min_sections=2, max_sections=3),
+        Course(code="ECON 31233", name="Intermediate Macro: Math Approach", level=30000, min_sections=1, max_sections=2),
         Course(code="ECON 30243", name="Contending Perspectives in Economics", level=30000, min_sections=2, max_sections=3),
-        Course(code="ECON 30253", name="Hist of Econ Thought", level=30000, min_sections=1, max_sections=2, core_wem=True),
+        Course(code="ECON 30213", name="Development Theory", level=30000, min_sections=1, max_sections=2),
+        Course(code="ECON 30253", name="History of Economic Thought", level=30000, min_sections=1, max_sections=2, core_wem=True),
         Course(code="ECON 30433", name="Development Studies", level=30000, min_sections=1, max_sections=2, core_ga=True),
         Course(code="ECON 30443", name="Asian Economics", level=30000, min_sections=1, max_sections=2, core_wem=True),
+        Course(code="ECON 30473", name="Regional and Urban Economics", level=30000, min_sections=1, max_sections=2),
         Course(code="ECON 30483", name="Financial History", level=30000, min_sections=1, max_sections=2, core_ht=True, core_wem=True),
+        Course(code="ECON 30503", name="Health Economics", level=30000, min_sections=1, max_sections=2),
+        Course(code="ECON 30523", name="Resource and Energy Economics", level=30000, min_sections=1, max_sections=2),
+        Course(code="ECON 30543", name="Environmental Economics and Policy", level=30000, min_sections=1, max_sections=2),
+        Course(code="ECON 30773", name="Public Choice", level=30000, min_sections=1, max_sections=2),
         
         # 40000 level courses
-        Course(code="ECON 40153", name="Eco of Financial Markets", level=40000, min_sections=1, max_sections=2, core_wem=True),
         Course(code="ECON 40313", name="Econometrics", level=40000, min_sections=2, max_sections=3),
         Course(code="ECON 40323", name="Time Series Econometrics", level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40513", name="Perspective in Internatl Econ", level=40000, min_sections=1, max_sections=2, core_ga=True),
         Course(code="ECON 40123", name="Game Theory", level=40000, min_sections=1, max_sections=1),
+        Course(code="ECON 40143", name="Public Finance", level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40153", name="Economics of Financial Markets", level=40000, min_sections=1, max_sections=2, core_wem=True),
+        Course(code="ECON 40213", name="International Trade and Payments", level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40223", name="International Monetary Economics", level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40333", name="Machine Learning in Economics", level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40433", name="Law and Economics", level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40493", name="Macro Analysis and Communication", level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40513", name="Perspective in Internatl Econ", level=40000, min_sections=1, max_sections=2, core_ga=True),
+        
+        # 40970 Special Topics
+        Course(code="ECON 40970", name="Real Estate Principles", level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40970", name="Causal Inferences", level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40970", name="Growth", level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40970", name="Agriculture (Development)", level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40970", name="Scientific Computation", level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40970", name="International Financial Crises", level=40000, min_sections=1, max_sections=2),
     ]
     db.add_all(courses)
 

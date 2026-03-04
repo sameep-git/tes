@@ -27,7 +27,7 @@ class Course(Base):
     __tablename__ = "courses"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    code: Mapped[str] = mapped_column(unique=True, index=True)  # e.g. ECON 10223
+    code: Mapped[str] = mapped_column(index=True)  # e.g. ECON 10223, can have duplicates for special topics
     name: Mapped[str] = mapped_column()
     credits: Mapped[int] = mapped_column(default=3)
     level: Mapped[int] = mapped_column()  # e.g., 10000, 30000, 40000

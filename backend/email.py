@@ -98,10 +98,10 @@ def send_preference_email(prof_id: int, semester: str, year: int) -> dict:
         message = MIMEText(
             f"Dear {prof.name},\n\n"
             f"Please reply to this email with your teaching preferences for {semester.capitalize()} {year}.\n"
-            f"Answer each of the following questions..\n\n"
+            f"Answer each of the following questions:\n\n"
             f"{schedule_table_text}"
-            f"Courses you'd like to teach (use course codes, e.g. ECON 30223): \n"
-            f"Courses you'd prefer not to teach: \n"
+            f"Courses you'd like to teach (IMPORTANT: provide both code and name, e.g. ECON 40970 Growth): \n"
+            f"Courses you'd prefer not to teach (code and name): \n"
             f"How many sections you'd like: \n"
             f"Maximum sections you can take on: \n"
             f"Preferred days/times (e.g. MWF mornings, TR afternoons): \n"

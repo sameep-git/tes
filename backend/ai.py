@@ -78,11 +78,12 @@ def extract_preferences_from_email(email_text: str) -> ParsedPreference:
     ===== EXTRACTION RULES =====
     
     COURSES (most important — read carefully):
-    1. Extract course preferences into the `preferred_courses` or `avoid_courses` fields using the exact CODE (e.g. "ECON 30223"), NOT the course name.
+    1. Extract course preferences into the `preferred_courses` or `avoid_courses` fields using the exact CODE (e.g. "ECON 30223" or "ECON 40970").
     2. Professors may refer to courses by name ("Intermediate Micro"), partial name ("Micro"), level ("upper division", "300-level"), or code. Match intelligently against the catalog above.
-    3. If they say "my usual courses" or reference prior semesters without specifics, set `notes_for_admin` with the quote and lower confidence.
-    4. If a name only partially matches, pick the closest code AND note ambiguity in `notes_for_admin`.
-    5. NEVER invent a course code not in the catalog. If you cannot match, put the unmatched text in `notes_for_admin`.
+    3. IMPORTANT: The catalog contains duplicate base codes for special topics (e.g. multiple ECON 40970s). You MUST carefully read the course name they provide and pick the exact code + name match from the catalog. If they omit the name for a special topic, add a note in `notes_for_admin` and pick the closest match or leave it out if completely ambiguous.
+    4. If they say "my usual courses" or reference prior semesters without specifics, set `notes_for_admin` with the quote and lower confidence.
+    5. If a name only partially matches, pick the closest code AND note ambiguity in `notes_for_admin`.
+    6. NEVER invent a course code not in the catalog. If you cannot match, put the unmatched text in `notes_for_admin`.
     6. `preferred_levels` should contain numeric level values like 10000, 30000, 40000 (matching the Level field in the catalog).
     
     TIMESLOTS:

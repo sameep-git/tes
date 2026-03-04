@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -54,12 +54,10 @@ function ChipSelect({
   selected,
   options,
   onChange,
-  labelKey = 'label',
 }: {
   selected: string[];
   options: { value: string; label: string }[];
   onChange: (val: string[]) => void;
-  labelKey?: string;
 }) {
   const [open, setOpen] = useState(false);
   const available = options.filter(o => !selected.includes(o.value));
@@ -210,13 +208,13 @@ function PreferenceDetailDialog({
   const [draft, setDraft] = useState<Record<string, unknown>>({});
 
   // Reset draft when pref changes
-  const parsedKey = pref?.id ?? 0;
-  useMemo(() => {
+
+  useEffect(() => {
     if (pref?.parsed_json) {
       setDraft({ ...pref.parsed_json });
       setEditMode(false);
     }
-  }, [parsedKey]);
+  }, [pref?.parsed_json]);
 
   if (!pref) return null;
 
@@ -347,13 +345,13 @@ function PreferenceDetailDialog({
                 <EditableField label="On Leave">
                   <button
                     type="button"
-                    className={`px-3 py-1 rounded-full text-xs border transition-all ${draft.on_leave
+                    className={`px-3 py-1 rounded-full text-xs border transition-all ${draft.on_leave === true
                       ? 'bg-red-100 text-red-700 border-red-300'
                       : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
                       }`}
-                    onClick={() => updateDraft('on_leave', !draft.on_leave)}
+                    onClick={() => updateDraft('on_leave', draft.on_leave === true ? false : true)}
                   >
-                    {draft.on_leave ? '⚠️ On Leave' : 'Not on leave'}
+                    {draft.on_leave === true ? '⚠️ On Leave' : 'Not on leave'}
                   </button>
                 </EditableField>
                 <EditableField label="Notes for Admin">
@@ -373,9 +371,17 @@ function PreferenceDetailDialog({
                 <ReadonlyField label="Preferred Levels" value={parsed.preferred_levels as string[]} />
                 <ReadonlyField label="Preferred Timeslots" value={parsed.preferred_timeslots as string[]} />
                 <ReadonlyField label="Avoid Timeslots" value={parsed.avoid_timeslots as string[]} />
-                <ReadonlyField label="Preferred Days" value={parsed.preferred_days as string[]} />
                 <ReadonlyField label="Avoid Days" value={parsed.avoid_days as string[]} />
-                <ReadonlyField label="Back-to-Back" value={parsed.back_to_back as string} />
+                <ReadonlyField
+                  label="Back-to-Back"
+                  value={
+                    parsed.wants_back_to_back === true
+                      ? 'Prefers back-to-back classes'
+                      : parsed.wants_back_to_back === false
+                        ? 'Avoid back-to-back classes'
+                        : 'No preference specified'
+                  }
+                />
                 <ReadonlyField label="On Leave" value={parsed.on_leave ? 'Yes' : 'No'} />
                 <ReadonlyField label="Notes for Admin" value={parsed.notes_for_admin as string} />
               </div>
