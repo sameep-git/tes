@@ -876,6 +876,70 @@ def get_schedule_stats(schedule_id: int) -> str:
     finally:
         db.close()
 
+def update_preference_json(pref_id: int, updates: dict) -> str:
+    """
+    Update specific keys in the parsed_json of an existing preference record.
+    For example, if the AI missed a course, you can pass updates={"avoid_courses": ["ECON 40000"]}.
+    Course entries in avoid_courses / preferred_courses are auto-resolved to the
+    canonical "CODE | Name" format used by the rest of the system.
+    This will merge the updates into the existing parsed_json.
+    """
+    db = SessionLocal()
+    try:
+        pref = db.query(Preference).filter(Preference.id == pref_id).first()
+        if not pref:
+            return json.dumps({"error": f"Preference record {pref_id} not found."})
+
+        # Build a lookup dict of all courses for resolving bare codes
+        all_courses = db.query(Course).all()
+        code_to_keys: dict[str, list[str]] = {}
+        for c in all_courses:
+            key = f"{c.code} | {c.name}"
+            code_to_keys.setdefault(c.code, []).append(key)
+
+        def resolve_course_list(items: list) -> list:
+            """Expand bare course codes into 'CODE | Name' keys."""
+            resolved = []
+            for item in items:
+                if " | " in str(item):
+                    # Already in full format
+                    resolved.append(item)
+                elif str(item) in code_to_keys:
+                    # Bare code — expand to all matching full keys
+                    resolved.extend(code_to_keys[str(item)])
+                else:
+                    # Unknown code — keep as-is so the admin can review
+                    resolved.append(item)
+            return resolved
+
+        # Merge the new values into the existing parsed_json dictionary
+        current_json = dict(pref.parsed_json) if pref.parsed_json else {}
+
+        course_fields = {"avoid_courses", "preferred_courses"}
+        for k, v in updates.items():
+            if k in course_fields and isinstance(v, list):
+                v = resolve_course_list(v)
+            current_json[k] = v
+
+        pref.parsed_json = current_json
+
+        # If the preference was already approved, un-approve it so the admin can review the change
+        pref.admin_approved = False
+
+        db.commit()
+        db.refresh(pref)
+
+        return json.dumps({
+            "status": "success",
+            "message": f"Successfully updated parsed_json for preference {pref_id}.",
+            "new_parsed_json": pref.parsed_json
+        })
+    except Exception as e:
+        db.rollback()
+        return json.dumps({"error": f"Failed to update preference: {str(e)}"})
+    finally:
+        db.close()
+
 
 # =========================================================================
 # Extended preference tools
@@ -1226,6 +1290,7 @@ ALL_TOOLS = [
     approve_preference,
     unapprove_preference,
     delete_preference,
+    update_preference_json,
     # Solver & schedules
     run_preflight_checks,
     trigger_solver,

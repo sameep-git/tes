@@ -1,7 +1,6 @@
 import os.path
 import base64
 from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -74,7 +73,6 @@ def send_preference_email(prof_id: int, semester: str, year: int) -> dict:
             Schedule.status == "Finalized"
         ).first()
 
-        schedule_table_html = ""
         schedule_table_text = ""
 
         if last_schedule:
@@ -85,58 +83,38 @@ def send_preference_email(prof_id: int, semester: str, year: int) -> dict:
             ).all()
 
             if last_sections:
-                schedule_table_html += f"<h3>Your {last_semester} {last_year} Schedule:</h3>"
-                schedule_table_html += "<table border='1' cellpadding='5' style='border-collapse: collapse;'>"
-                schedule_table_html += "<tr><th>Course</th><th>Title</th><th>Days & Times</th></tr>"
-                
-                schedule_table_text += f"Your {last_semester} {last_year} Schedule:\n"
+                schedule_table_text += f"Your {last_semester} {last_year} Schedule (for reference):\n"
                 schedule_table_text += "-"*50 + "\n"
-                
+
                 for sec in last_sections:
                     course_code = sec.course.code if sec.course else "Unknown Course"
                     course_name = sec.course.name if sec.course else "Unknown Title"
                     timeslot_label = sec.timeslot.label if sec.timeslot else "TBD"
-                    
-                    schedule_table_html += f"<tr><td>{course_code}</td><td>{course_name}</td><td>{timeslot_label}</td></tr>"
                     schedule_table_text += f"{course_code} - {course_name} | {timeslot_label}\n"
-                
-                schedule_table_html += "</table><br>"
+
                 schedule_table_text += "-"*50 + "\n\n"
         
-        # 3. Construct the multipart email message
-        message = MIMEMultipart("alternative")
+        # 3. Construct a plain-text email
+        message = MIMEText(
+            f"Dear {prof.name},\n\n"
+            f"Please reply to this email with your teaching preferences for {semester.capitalize()} {year}.\n"
+            f"Answer each of the following questions:\n\n"
+            f"{schedule_table_text}"
+            f"Courses you'd like to teach (IMPORTANT: provide both code and name, e.g. ECON 40970 Growth): \n"
+            f"Courses you'd prefer not to teach (code and name): \n"
+            f"How many sections you'd like: \n"
+            f"Maximum sections you can take on: \n"
+            f"Preferred days/times (e.g. MWF mornings, TR afternoons): \n"
+            f"Days or times to avoid: \n"
+            f"Back-to-back sections (prefer / avoid / no preference): \n"
+            f"On leave or sabbatical this semester? (yes / no): \n"
+            f"Anything else we should know: \n\n"
+            f"Thanks,\n"
+            f"TCU Econ Scheduling",
+            "plain"
+        )
         message['To'] = str(prof.email)
         message['Subject'] = f"Action Required: {semester} {year} Teaching Preferences"
-        
-        # Text version
-        text_content = (
-            f"Dear {prof.name},\n\n"
-            f"It's time to collect teaching preferences for the {semester} {year} semester.\n\n"
-            f"{schedule_table_text}"
-            f"Please reply directly to this email with the courses and timeslots you would "
-            f"prefer to teach.\n\n"
-            f"Thank you,\n"
-            f"TES System"
-        )
-        
-        # HTML version
-        html_content = f"""
-        <html>
-          <body>
-            <p>Dear {prof.name},</p>
-            <p>It's time to collect teaching preferences for the <b>{semester} {year}</b> semester.</p>
-            {schedule_table_html}
-            <p>Please reply directly to this email with the courses and timeslots you would prefer to teach.</p>
-            <br>
-            <p>Thank you,<br>TES System</p>
-          </body>
-        </html>
-        """
-        
-        part1 = MIMEText(text_content, "plain")
-        part2 = MIMEText(html_content, "html")
-        message.attach(part1)
-        message.attach(part2)
 
         # 4. Add the custom header to track the reply
         token = f"PROF-{prof.id}-{semester}-{year}"

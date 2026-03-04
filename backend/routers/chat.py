@@ -1,6 +1,8 @@
 import json
 import os
 import asyncio
+import sys
+import traceback
 from typing import AsyncGenerator
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
@@ -180,6 +182,10 @@ async def chat_endpoint(request: Request):
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
         except Exception as e:
+            error_trace = traceback.format_exc()
+            print("FATAL CHAT ERROR:", error_trace, file=sys.stderr)
+            sys.stderr.flush()
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
