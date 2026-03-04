@@ -166,14 +166,15 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
             avoid_days = pref.get("avoid_days", [])
 
             for c in courses:
+                course_key = f"{c.code} | {c.name}"
                 for t in timeslots:
                     var = assign[(p.id, c.id, t.id)]
 
-                    # Points for Course match
-                    if c.code in preferred_courses:
+                    # Points for Course match (handle both "CODE" and "CODE | Name" formats)
+                    if c.code in preferred_courses or course_key in preferred_courses:
                         objective_terms.append(var * 10)
                     
-                    if c.code in avoid_courses:
+                    if c.code in avoid_courses or course_key in avoid_courses:
                         objective_terms.append(var * -100)
                     
                     # Points for Course Level match

@@ -562,7 +562,7 @@ export default function Dashboard() {
                     <div className="flex items-center gap-4 p-4 mb-4 bg-amber-50 text-amber-900 border border-amber-200 rounded-lg">
                       <AlertCircle className="w-5 h-5 flex-shrink-0" />
                       <div>
-                        <p className="font-medium">Pre-flight Blocked</p>
+                        <p className="font-medium">Pending Approvals</p>
                         <p className="text-sm opacity-90">{pendingCount} preference(s) pending approval.</p>
                       </div>
                     </div>
