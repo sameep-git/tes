@@ -157,9 +157,8 @@ To disable, remove the `scheduler.add_job(...)` call in `backend/main.py`.
 
 ---
 
-## Security Notes
+Copyright (c) 2026 Sameep Shah. All rights reserved.
 
-- `credentials.json` and `token.json` contain sensitive OAuth credentials — **never commit them to git** (they are already in `.gitignore`)
-- `GEMINI_API_KEY` should be in `.env` only — **never hardcode it**
-- For production, protect the `/api/chat` endpoint through network-level access control (firewall, VPN, reverse proxy auth) or a proper authentication provider.
-- The current SQLite setup is single-user; for multi-user deployment consider PostgreSQL + a distributed lock for the email scheduler
+No part of this source code may be used, copied, modified, merged, published,
+distributed, sublicensed, or sold without the express prior written permission
+of the copyright holder.
