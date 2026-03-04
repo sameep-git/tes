@@ -22,7 +22,7 @@ def get_preferences(
     )
     if semester:
         q = q.filter(func.lower(models.Preference.semester) == semester.lower())
-    if year:
+    if year is not None:
         q = q.filter(models.Preference.year == year)
     return q.offset(skip).limit(limit).all()
 

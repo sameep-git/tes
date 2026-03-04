@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -221,7 +221,7 @@ function PreferenceDetailDialog({
   const profName = pref.professor?.name ?? `Prof #${pref.professor_id}`;
   const parsed = editMode ? draft : (pref.parsed_json as Record<string, unknown> | null);
 
-  const courseOptions = courses.map(c => ({ value: c.code, label: `${c.code} — ${c.name}` }));
+  const courseOptions = courses.map(c => ({ value: `${c.code} | ${c.name}`, label: `${c.code} — ${c.name}` }));
   const timeslotOptions = timeslots
     .filter(t => t.active)
     .map(t => ({ value: t.label, label: t.label }));
@@ -382,7 +382,16 @@ function PreferenceDetailDialog({
                         : 'No preference specified'
                   }
                 />
-                <ReadonlyField label="On Leave" value={parsed.on_leave ? 'Yes' : 'No'} />
+                <ReadonlyField
+                  label="On Leave"
+                  value={
+                    parsed.on_leave === true
+                      ? 'Yes'
+                      : parsed.on_leave === false
+                        ? 'No'
+                        : '—/Unknown'
+                  }
+                />
                 <ReadonlyField label="Notes for Admin" value={parsed.notes_for_admin as string} />
               </div>
             )}

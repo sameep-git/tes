@@ -27,7 +27,7 @@ def get_schedules(
     )
     if semester:
         q = q.filter(func.lower(models.Schedule.semester) == semester.lower())
-    if year:
+    if year is not None:
         q = q.filter(models.Schedule.year == year)
     schedules = q.offset(skip).limit(limit).all()
     return [schemas.ScheduleResponse.from_orm_with_relations(s) for s in schedules]

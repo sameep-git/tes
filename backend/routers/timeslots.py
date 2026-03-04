@@ -15,5 +15,5 @@ def get_timeslots(
 ):
     q = db.query(models.TimeSlot)
     if active_only:
-        q = q.filter(models.TimeSlot.active == True)
+        q = q.filter(models.TimeSlot.active.is_(True))
     return q.order_by(models.TimeSlot.days, models.TimeSlot.start_time).all()
