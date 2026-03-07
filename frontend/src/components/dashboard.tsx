@@ -14,9 +14,10 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { AlertCircle, CheckCircle2, Clock, Eye, History, Loader2, Save, X, Plus, ChevronDown } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock, Eye, History, Loader2, Save, X, Plus, ChevronDown, TrendingUp } from 'lucide-react';
 import ChatPanel from './chat-panel';
 import { CourseHistoryDialog } from './course-history-dialog';
+import InsightsTab from './insights-tab';
 import {
   queryKeys,
   fetchProfessors,
@@ -548,7 +549,7 @@ export default function Dashboard() {
 
         <main className="flex-1 overflow-y-auto p-6 min-h-0">
           <Tabs defaultValue="inbox" className="w-full h-full flex flex-col">
-            <TabsList className="grid w-full grid-cols-4 max-w-2xl mb-6 flex-shrink-0">
+            <TabsList className="grid w-full grid-cols-5 max-w-2xl mb-6 flex-shrink-0">
               <TabsTrigger value="inbox">
                 Preferences Inbox
                 {pendingCount > 0 && (
@@ -560,6 +561,10 @@ export default function Dashboard() {
               <TabsTrigger value="professors">Professors</TabsTrigger>
               <TabsTrigger value="courses">Courses</TabsTrigger>
               <TabsTrigger value="schedules">Schedules</TabsTrigger>
+              <TabsTrigger value="insights">
+                <TrendingUp className="w-3.5 h-3.5 mr-1.5" />
+                Insights
+              </TabsTrigger>
             </TabsList>
 
             {/* ========== Inbox Tab ========== */}
@@ -782,6 +787,11 @@ export default function Dashboard() {
                   )}
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            {/* ========== Insights Tab ========== */}
+            <TabsContent value="insights" className="flex-1 mt-0">
+              <InsightsTab semester={semester} year={year} courses={courses} />
             </TabsContent>
 
             {/* ========== Schedules Tab ========== */}
