@@ -89,6 +89,8 @@ class SectionResponse(BaseModel):
     course_name: Optional[str] = None
     professor_name: Optional[str] = None
     timeslot_label: Optional[str] = None
+    semester: Optional[str] = None
+    year: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -105,6 +107,8 @@ class SectionResponse(BaseModel):
             course_name=section.course.name if section.course else None,
             professor_name=section.professor.name if section.professor else None,
             timeslot_label=section.timeslot.label if section.timeslot else None,
+            semester=section.schedule.semester if getattr(section, 'schedule', None) else None,
+            year=section.schedule.year if getattr(section, 'schedule', None) else None,
         )
 
 
