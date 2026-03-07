@@ -62,17 +62,10 @@ export function CourseHistoryDialog({ course, open, onOpenChange }: CourseHistor
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">All Years</SelectItem>
-                                {/* Dynamically list years from the data and fallback years */}
+                                {/* Dynamically list years from the data */}
                                 {uniqueYears.map(y => (
                                     <SelectItem key={y} value={y.toString()}>{y}</SelectItem>
                                 ))}
-                                {uniqueYears.length === 0 && (
-                                    <>
-                                        <SelectItem value="2026">2026</SelectItem>
-                                        <SelectItem value="2025">2025</SelectItem>
-                                        <SelectItem value="2024">2024</SelectItem>
-                                    </>
-                                )}
                             </SelectContent>
                         </Select>
                     </div>
@@ -93,7 +86,7 @@ export function CourseHistoryDialog({ course, open, onOpenChange }: CourseHistor
                                 <TableRow>
                                     <TableHead className="w-[120px]">Term</TableHead>
                                     <TableHead>Professor</TableHead>
-                                    <TableHead>TimeSlot</TableHead>
+                                    <TableHead>Timeslot</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>

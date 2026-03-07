@@ -115,8 +115,8 @@ export const fetchCourseHistory = (courseId: number, semester?: string, year?: n
     if (semester) params.append('semester', semester);
     if (year) params.append('year', year.toString());
 
-    const qty = params.toString();
-    if (qty) url += `?${qty}`;
+    const queryString = params.toString();
+    if (queryString) url += `?${queryString}`;
 
     return fetch(url).then(r => jsonOrThrow<Section[]>(r));
 };

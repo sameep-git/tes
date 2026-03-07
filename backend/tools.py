@@ -1269,17 +1269,6 @@ def get_course_history(course_id: int, semester: Optional[str] = None, year: Opt
     """
     db = SessionLocal()
     try:
-        query = db.query(Section).join(Section.schedule).filter(
-            Section.course_id == course_id,
-            Section.schedule.has(status="Finalized")
-        )
-        if semester:
-            query = query.filter(Section.schedule.has(semester=semester))
-        if year:
-            query = query.filter(Section.schedule.has(year=year))
-            
-        from .models import Schedule # Need to import Schedule inside or globally if we want to sort, but actually we need to join Schedule.
-        # It's better to explicitly join to sort:
         from .models import Schedule
         query = db.query(Section).join(Schedule).filter(
             Section.course_id == course_id,

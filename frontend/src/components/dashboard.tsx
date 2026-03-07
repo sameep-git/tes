@@ -458,7 +458,7 @@ export default function Dashboard() {
     queryFn: () => fetchSchedules(semester, year),
   });
   const { data: preferences = [], isLoading: prefsLoading } = useQuery({
-    queryKey: ['preferences', semester, year],
+    queryKey: queryKeys.preferences(semester, year),
     queryFn: () => fetchPreferences(semester, year),
   });
 

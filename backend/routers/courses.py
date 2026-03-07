@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 
 from ..database import get_db
 from .. import models, schemas
@@ -15,8 +15,8 @@ def get_courses(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
 @router.get("/{course_id}/history", response_model=List[schemas.SectionResponse])
 def get_course_history(
     course_id: int, 
-    semester: str = None, 
-    year: int = None, 
+    semester: Optional[str] = None, 
+    year: Optional[int] = None, 
     db: Session = Depends(get_db)
 ):
     query = db.query(models.Section).join(models.Schedule).filter(
