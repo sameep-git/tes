@@ -34,6 +34,8 @@ export interface Section {
     professor_name: string | null;
     timeslot_label: string | null;
     status: string;
+    semester?: string;
+    year?: number;
 }
 
 export interface Schedule {
@@ -106,6 +108,18 @@ export const fetchSchedules = (semester: string, year: number): Promise<Schedule
 
 export const fetchPreferences = (semester: string, year: number): Promise<Preference[]> =>
     fetch(`${API}/preferences?semester=${encodeURIComponent(semester)}&year=${year}`).then(r => jsonOrThrow<Preference[]>(r));
+
+export const fetchCourseHistory = (courseId: number, semester?: string, year?: number): Promise<Section[]> => {
+    let url = `${API}/courses/${courseId}/history`;
+    const params = new URLSearchParams();
+    if (semester) params.append('semester', semester);
+    if (year) params.append('year', year.toString());
+
+    const qty = params.toString();
+    if (qty) url += `?${qty}`;
+
+    return fetch(url).then(r => jsonOrThrow<Section[]>(r));
+};
 
 // ---------------------------------------------------------------------------
 // Mutations

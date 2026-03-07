@@ -82,7 +82,7 @@ def seed_db():
         Professor(name="Maxwell Bullard", email="m.bullard@tcu.edu", rank="Assistant Professor", max_sections=3),
         Professor(name="Haley Wilbert", email="h.wilbert@tcu.edu", rank="Assistant Professor", max_sections=3),
         Professor(name="Rishav Bista", email="r.bista@tcu.edu", rank="Associate Professor", max_sections=3),
-        Professor(name="Dawn C. Elliott", email="d.elliott@tcu.edu", rank="Associate Professor", max_sections=3),
+        Professor(name="Dawn Elliott", email="d.elliott@tcu.edu", rank="Associate Professor", max_sections=3),
         Professor(name="Weiwei Liu", email="w.liu1236@tcu.edu", rank="Associate Professor", max_sections=3),
         Professor(name="Robert F. Garnett", email="r.garnett@tcu.edu", rank="Professor", max_sections=3),
         Professor(name="John T. Harvey", email="j.harvey@tcu.edu", rank="Professor", max_sections=3),

@@ -14,8 +14,9 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { AlertCircle, CheckCircle2, Clock, Eye, Loader2, Save, X, Plus, ChevronDown } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock, Eye, History, Loader2, Save, X, Plus, ChevronDown } from 'lucide-react';
 import ChatPanel from './chat-panel';
+import { CourseHistoryDialog } from './course-history-dialog';
 import {
   queryKeys,
   fetchProfessors,
@@ -457,11 +458,11 @@ export default function Dashboard() {
     queryFn: () => fetchSchedules(semester, year),
   });
   const { data: preferences = [], isLoading: prefsLoading } = useQuery({
-    queryKey: queryKeys.preferences(semester, year),
+    queryKey: ['preferences', semester, year],
     queryFn: () => fetchPreferences(semester, year),
   });
 
-  // ---- Mutation: approve preference ----
+  const [viewingHistoryCourse, setViewingHistoryCourse] = useState<Course | null>(null);
   const approveMutation = useMutation({
     mutationFn: approvePreference,
     onSuccess: () => {
@@ -492,14 +493,25 @@ export default function Dashboard() {
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
-      {/* Preference Detail Dialog */}
-      <PreferenceDetailDialog
-        pref={viewingPref}
-        courses={courses}
-        timeslots={timeslots}
-        onClose={() => setViewingPref(null)}
-        onSave={(prefId, parsed) => updatePrefMutation.mutate({ prefId, parsed })}
-        isSaving={updatePrefMutation.isPending}
+      {/* Sub-components / Modals */}
+      {viewingPref && (
+        <PreferenceDetailDialog
+          pref={viewingPref}
+          courses={courses}
+          timeslots={timeslots}
+          onClose={() => setViewingPref(null)}
+          onSave={(prefId, parsed) => updatePrefMutation.mutate({ prefId, parsed })}
+          isSaving={updatePrefMutation.isPending}
+        />
+      )}
+
+      {/* Course History Modal */}
+      <CourseHistoryDialog
+        course={viewingHistoryCourse}
+        open={viewingHistoryCourse !== null}
+        onOpenChange={(open) => {
+          if (!open) setViewingHistoryCourse(null);
+        }}
       />
 
       {/* Left Side: Data Dashboard */}
@@ -719,6 +731,7 @@ export default function Dashboard() {
                             <TableHead>Sections</TableHead>
                             <TableHead>Core</TableHead>
                             <TableHead>Lab</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -750,6 +763,17 @@ export default function Dashboard() {
                                 </div>
                               </TableCell>
                               <TableCell>{course.requires_lab ? '✓' : ''}</TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-8 w-8 p-0 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50"
+                                  title="View Course History"
+                                  onClick={() => setViewingHistoryCourse(course)}
+                                >
+                                  <History className="h-4 w-4" />
+                                </Button>
+                              </TableCell>
                             </TableRow>
                           ))}
                         </TableBody>

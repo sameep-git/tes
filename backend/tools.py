@@ -1262,6 +1262,54 @@ def update_prime_time_config(
     finally:
         db.close()
 
+def get_course_history(course_id: int, semester: Optional[str] = None, year: Optional[int] = None) -> str:
+    """
+    Retrieve historical sections (who taught what, when, and what timeslot) for a given course ID.
+    Only finalized schedules are included.
+    """
+    db = SessionLocal()
+    try:
+        query = db.query(Section).join(Section.schedule).filter(
+            Section.course_id == course_id,
+            Section.schedule.has(status="Finalized")
+        )
+        if semester:
+            query = query.filter(Section.schedule.has(semester=semester))
+        if year:
+            query = query.filter(Section.schedule.has(year=year))
+            
+        from .models import Schedule # Need to import Schedule inside or globally if we want to sort, but actually we need to join Schedule.
+        # It's better to explicitly join to sort:
+        from .models import Schedule
+        query = db.query(Section).join(Schedule).filter(
+            Section.course_id == course_id,
+            Schedule.status == "Finalized"
+        )
+        if semester:
+            query = query.filter(Schedule.semester == semester)
+        if year:
+            query = query.filter(Schedule.year == year)
+            
+        sections = query.order_by(Schedule.year.desc(), Schedule.semester.asc()).all()
+        
+        result = []
+        for s in sections:
+            result.append({
+                "id": s.id,
+                "semester": s.schedule.semester,
+                "year": s.schedule.year,
+                "professor": s.professor.name if s.professor else "TBA",
+                "timeslot": s.timeslot.label if s.timeslot else "TBA",
+                "course_name": s.course.name if s.course else "TBA"
+            })
+            
+        if not result:
+            return json.dumps({"message": f"No historical sections found for course ID {course_id}."})
+            
+        return json.dumps(result)
+    finally:
+        db.close()
+
 
 # =========================================================================
 # Tool registry — used by chat.py to register tools with Gemini
@@ -1306,6 +1354,7 @@ ALL_TOOLS = [
     create_course,
     update_course,
     delete_course,
+    get_course_history,
     # Timeslots
     toggle_timeslot,
     # Constraints
