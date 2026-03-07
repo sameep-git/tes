@@ -56,8 +56,8 @@ PAST_SCHEDULE_DATA = [
     {'course_code': 'ECON 40313', 'course_name': 'Econometrics', 'section': '045', 'instructor': 'Rishav Bista', 'days': 'TR', 'start_time': '12:30', 'end_time': '13:50'},
     {'course_code': 'ECON 40323', 'course_name': 'Time Series Econometrics', 'section': '080', 'instructor': 'Kiril Tochkov', 'days': 'MW', 'start_time': '19:00', 'end_time': '20:20'},
     {'course_code': 'ECON 40513', 'course_name': 'Perspective in Internatl Econ', 'section': '005', 'instructor': 'John Harvey', 'days': 'TR', 'start_time': '08:00', 'end_time': '09:20'},
-    {'course_code': 'ECON 40970', 'course_name': 'Experimental Course - Big Data in Economics', 'section': '055', 'instructor': 'Stepan Gordeev', 'days': 'TR', 'start_time': '14:00', 'end_time': '15:20'},
-    {'course_code': 'ECON 40970', 'course_name': 'Experimental Course - Global Health', 'section': '056', 'instructor': 'Graham Gardner', 'days': 'TR', 'start_time': '14:00', 'end_time': '15:20'},
+    {'course_code': 'ECON 40970', 'course_name': 'Big Data in Economics', 'section': '055', 'instructor': 'Stepan Gordeev', 'days': 'TR', 'start_time': '14:00', 'end_time': '15:20'},
+    {'course_code': 'ECON 40970', 'course_name': 'Global Health', 'section': '056', 'instructor': 'Graham Gardner', 'days': 'TR', 'start_time': '14:00', 'end_time': '15:20'},
 ]
 
 def seed_db():
@@ -128,7 +128,7 @@ def seed_db():
         Course(code="ECON 30503", name="Health Economics", level=30000, min_sections=1, max_sections=2),
         Course(code="ECON 30523", name="Resource and Energy Economics", level=30000, min_sections=1, max_sections=2),
         Course(code="ECON 30543", name="Environmental Economics and Policy", level=30000, min_sections=1, max_sections=2),
-        Course(code="ECON 30733", name="Economic History of the US", level=30000, min_sections=1, max_sections=2),
+        Course(code="ECON 30733", name="European Economic History II", level=30000, min_sections=1, max_sections=2, core_ht=True),
         Course(code="ECON 30773", name="Public Choice", level=30000, min_sections=1, max_sections=2),
         
         # 40000 level courses
@@ -151,8 +151,8 @@ def seed_db():
         Course(code="ECON 40970", name="Agriculture (Development)", level=40000, min_sections=1, max_sections=2),
         Course(code="ECON 40970", name="Scientific Computation", level=40000, min_sections=1, max_sections=2),
         Course(code="ECON 40970", name="International Financial Crises", level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40970", name="Experimental Course - Big Data in Economics", level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40970", name="Experimental Course - Global Health", level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40970", name="Big Data in Economics", level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40970", name="Global Health", level=40000, min_sections=1, max_sections=2),
     ]
     db.add_all(courses)
 
