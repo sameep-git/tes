@@ -128,7 +128,7 @@ def seed_db():
         Course(code="ECON 30503", name="Health Economics", level=30000, min_sections=1, max_sections=2),
         Course(code="ECON 30523", name="Resource and Energy Economics", level=30000, min_sections=1, max_sections=2),
         Course(code="ECON 30543", name="Environmental Economics and Policy", level=30000, min_sections=1, max_sections=2),
-        Course(code="ECON 30733", name="Economic History of the US", level=30000, min_sections=1, max_sections=2),
+        Course(code="ECON 30733", name="European Economic History II", level=30000, min_sections=1, max_sections=2, core_ht=True),
         Course(code="ECON 30773", name="Public Choice", level=30000, min_sections=1, max_sections=2),
         
         # 40000 level courses
