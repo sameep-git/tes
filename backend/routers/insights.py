@@ -1,14 +1,16 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 from collections import Counter
+import logging
 
 from ..database import get_db
 from .. import models
 
 router = APIRouter(prefix="/api/insights", tags=["insights"])
+
+logger = logging.getLogger(__name__)
 
 class InsightSummary(BaseModel):
     hotCourse: Optional[Dict[str, Any]] = None
@@ -36,6 +38,8 @@ class InsightsResponse(BaseModel):
 def get_hour_bucket(start_time_str: str) -> tuple[str, int]:
     """Convert '09:30' to ('9 AM', 9)"""
     try:
+        if not start_time_str or ':' not in start_time_str:
+            raise ValueError(f"Invalid time format: {start_time_str}")
         hour = int(start_time_str.split(':')[0])
         label = f"{hour if hour <= 12 else hour - 12} {'AM' if hour < 12 else 'PM'}"
         # Handle 12 PM (noon) and 12 AM (midnight)
@@ -44,7 +48,8 @@ def get_hour_bucket(start_time_str: str) -> tuple[str, int]:
         elif hour == 12:
             label = "12 PM"
         return label, hour
-    except:
+    except (ValueError, IndexError, AttributeError) as e:
+        logger.error(f"Error parsing time bucket for '{start_time_str}': {e}")
         return "Unknown", 99
 
 @router.get("/", response_model=InsightsResponse)
@@ -53,15 +58,16 @@ def get_insights(
     year: int,
     db: Session = Depends(get_db)
 ):
-    active_profs = db.query(models.Professor).filter(models.Professor.active == True).all()
-    total_active = len(active_profs)
+    # Use .count() instead of loading all objects
+    total_active = db.query(models.Professor).filter(models.Professor.active == True).count()
     
-    approved_prefs = db.query(models.Preference).filter(
+    # Fetch only the parsed_json column to reduce memory usage
+    approved_prefs_data = db.query(models.Preference.parsed_json).filter(
         models.Preference.semester == semester,
         models.Preference.year == year,
         models.Preference.admin_approved == True
     ).all()
-    approved_count = len(approved_prefs)
+    approved_count = len(approved_prefs_data)
     
     # Use full "CODE | Name" as the key for courses
     course_pref_counter = Counter()
@@ -73,8 +79,8 @@ def get_insights(
     
     all_timeslots = {t.label: t for t in db.query(models.TimeSlot).all()}
 
-    for pref in approved_prefs:
-        data = pref.parsed_json or {}
+    for (parsed_json,) in approved_prefs_data:
+        data = parsed_json or {}
         
         # Courses - Now keeping the full "CODE | Name"
         for c in data.get("preferred_courses", []):
@@ -128,6 +134,9 @@ def get_insights(
             avoided=course_avoid_counter[key]
         ))
     
+    # Sort courses deterministically
+    course_insights.sort(key=lambda x: (x.code, x.name))
+    
     # Build Timeslot Data by Hour
     ts_insights = []
     all_seen_hours = set(ts_pref_counter.keys()) | set(ts_avoid_counter.keys())
@@ -158,7 +167,6 @@ def get_insights(
     hot_course = None
     if course_pref_counter:
         top_key, top_count = course_pref_counter.most_common(1)[0]
-        # Try to format it nicely for the summary card
         parts = top_key.split(" | ")
         display_code = parts[0]
         hot_course = {"code": display_code, "count": top_count}

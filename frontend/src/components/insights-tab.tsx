@@ -2,11 +2,11 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { 
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell 
+    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
 } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, TrendingUp, AlertTriangle, CheckCircle2, Search, Info } from 'lucide-react';
+import { Loader2, TrendingUp, AlertTriangle, CheckCircle2, Search, Info, AlertOctagon } from 'lucide-react';
 import { fetchInsights, queryKeys, Course } from '@/lib/api';
 import { useState, useMemo } from 'react';
 
@@ -35,7 +35,14 @@ function CourseSearch({
                     return (
                         <Badge key={v} variant="secondary" className="px-2 py-1 gap-1">
                             {display}
-                            <button onClick={() => onChange(selected.filter(s => s !== v))} className="hover:text-red-500">×</button>
+                            <button 
+                                type="button"
+                                aria-label={`Remove ${display}`}
+                                onClick={() => onChange(selected.filter(s => s !== v))} 
+                                className="hover:text-red-500"
+                            >
+                                x
+                            </button>
                         </Badge>
                     );
                 })}
@@ -54,6 +61,7 @@ function CourseSearch({
                         {filtered.map(opt => (
                             <button
                                 key={opt.value}
+                                type="button"
                                 className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors"
                                 onClick={() => {
                                     onChange([...selected, opt.value]);
@@ -77,7 +85,7 @@ interface InsightsTabProps {
 }
 
 export default function InsightsTab({ semester, year, courses }: InsightsTabProps) {
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isError } = useQuery({
         queryKey: queryKeys.insights(semester, year),
         queryFn: () => fetchInsights(semester, year),
     });
@@ -111,6 +119,20 @@ export default function InsightsTab({ semester, year, courses }: InsightsTabProp
         );
     }
 
+    if (isError) {
+        return (
+            <Card className="border-red-200 bg-red-50">
+                <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                    <AlertOctagon className="w-12 h-12 text-red-400 mb-4" />
+                    <h3 className="text-lg font-medium text-red-900">Failed to load insights</h3>
+                    <p className="text-sm text-red-700 max-w-sm mt-1">
+                        There was an error communicating with the server. Please try refreshing the page.
+                    </p>
+                </CardContent>
+            </Card>
+        );
+    }
+
     if (!data || (data.timeslotData.length === 0 && data.courseData.length === 0)) {
         return (
             <Card className="border-dashed">
@@ -125,7 +147,10 @@ export default function InsightsTab({ semester, year, courses }: InsightsTabProp
         );
     }
 
-    const readinessPercent = Math.round((data.summary.readiness.approved / data.summary.readiness.total) * 100) || 0;
+    const totalProfs = data.summary.readiness.total;
+    const readinessPercent = totalProfs > 0 
+        ? Math.round((data.summary.readiness.approved / totalProfs) * 100) 
+        : 0;
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
@@ -194,25 +219,27 @@ export default function InsightsTab({ semester, year, courses }: InsightsTabProp
                     <CardContent>
                         <div className="h-[350px] w-full">
                             <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={data.timeslotData} margin={{ top: 20, right: 30, left: 0, bottom: 60 }}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                    <XAxis 
-                                        dataKey="label" 
-                                        angle={-45} 
-                                        textAnchor="end" 
-                                        height={60} 
-                                        interval={0}
-                                        tick={{ fontSize: 10 }}
-                                        tickMargin={10}
-                                    />
-                                    <YAxis style={{ fontSize: '12px' }} />
-                                    <Tooltip 
-                                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                                    />
-                                    <Legend verticalAlign="top" height={36}/>
-                                    <Bar dataKey="preferred" name="Preferred" fill="#10b981" stackId="a" />
-                                    <Bar dataKey="avoided" name="Avoided" fill="#ef4444" stackId="a" />
-                                </BarChart>
+                                    <BarChart data={data.timeslotData} margin={{ top: 20, right: 30, left: 0, bottom: 60 }} barCategoryGap="20%">
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                        <XAxis 
+                                            dataKey="label" 
+                                            angle={-45} 
+                                            textAnchor="end" 
+                                            height={60} 
+                                            interval={0}
+                                            tick={{ fontSize: 10 }}
+                                            tickMargin={10}
+                                        />
+                                        <YAxis style={{ fontSize: '12px' }} />
+                                        <Tooltip 
+                                            allowEscapeViewBox={{ x: false, y: true }}
+                                            wrapperStyle={{ zIndex: 1000 }}
+                                            contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                                        />
+                                        <Legend verticalAlign="top" height={36}/>
+                                        <Bar dataKey="preferred" name="Preferred" fill="#10b981" stackId="a" />
+                                        <Bar dataKey="avoided" name="Avoided" fill="#ef4444" stackId="a" />
+                                    </BarChart>
                             </ResponsiveContainer>
                         </div>
                     </CardContent>
@@ -237,7 +264,7 @@ export default function InsightsTab({ semester, year, courses }: InsightsTabProp
                         <div className="h-[250px] w-full mt-4 flex items-center justify-center">
                             {filteredCourseData.length > 0 ? (
                                 <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart layout="vertical" data={filteredCourseData} margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
+                                    <BarChart layout="vertical" data={filteredCourseData} margin={{ top: 5, right: 30, left: 40, bottom: 5 }} barCategoryGap="20%">
                                         <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
                                         <XAxis type="number" hide />
                                         <YAxis 
@@ -246,7 +273,12 @@ export default function InsightsTab({ semester, year, courses }: InsightsTabProp
                                             style={{ fontSize: '11px', fontWeight: 'bold' }}
                                             width={140}
                                         />
-                                        <Tooltip cursor={{ fill: '#f9fafb' }} />
+                                        <Tooltip 
+                                            allowEscapeViewBox={{ x: false, y: true }}
+                                            wrapperStyle={{ zIndex: 1000 }}
+                                            cursor={{ fill: '#f9fafb' }}
+                                            contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: '12px' }}
+                                        />
                                         <Bar dataKey="preferred" name="Preferred" fill="#3b82f6" stackId="a" />
                                         <Bar dataKey="avoided" name="Avoided" fill="#94a3b8" stackId="a" />
                                     </BarChart>

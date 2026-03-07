@@ -73,9 +73,9 @@ export interface Preference {
 
 export interface InsightsResponse {
     summary: {
-        hotCourse?: { code: string; count: number };
-        peakTime?: { label: string; count: number };
-        mostAvoidedTime?: { label: string; count: number };
+        hotCourse: { code: string; count: number } | null;
+        peakTime: { label: string; count: number } | null;
+        mostAvoidedTime: { label: string; count: number } | null;
         readiness: { approved: number; total: number };
     };
     timeslotData: Array<{
