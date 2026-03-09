@@ -2,64 +2,6 @@ from sqlalchemy.orm import Session
 from .database import engine, Base, SessionLocal
 from .models import Professor, Course, TimeSlot, Constraint, Schedule, Section
 
-PAST_SCHEDULE_DATA = [
-    {'course_code': 'ECON 10223', 'course_name': 'Intro Microeconomics', 'section': '010', 'instructor': 'Douglas Butler', 'days': 'MWF', 'start_time': '09:00', 'end_time': '09:50'},
-    {'course_code': 'ECON 10223', 'course_name': 'Intro Microeconomics', 'section': '015', 'instructor': 'Graham Gardner', 'days': 'TR', 'start_time': '09:30', 'end_time': '10:50'},
-    {'course_code': 'ECON 10223', 'course_name': 'Intro Microeconomics', 'section': '020', 'instructor': 'Douglas Butler', 'days': 'MWF', 'start_time': '10:00', 'end_time': '10:50'},
-    {'course_code': 'ECON 10223', 'course_name': 'Intro Microeconomics', 'section': '021', 'instructor': 'Isabella Ann Yerby', 'days': 'MWF', 'start_time': '10:00', 'end_time': '10:50'},
-    {'course_code': 'ECON 10223', 'course_name': 'Intro Microeconomics', 'section': '022', 'instructor': 'Stephen Nicar', 'days': 'MWF', 'start_time': '10:00', 'end_time': '10:50'},
-    {'course_code': 'ECON 10223', 'course_name': 'Intro Microeconomics', 'section': '030', 'instructor': 'Isabella Ann Yerby', 'days': 'MWF', 'start_time': '11:00', 'end_time': '11:50'},
-    {'course_code': 'ECON 10223', 'course_name': 'Intro Microeconomics', 'section': '035', 'instructor': 'Graham Gardner', 'days': 'TR', 'start_time': '11:00', 'end_time': '12:20'},
-    {'course_code': 'ECON 10223', 'course_name': 'Intro Microeconomics', 'section': '050', 'instructor': 'Horacio Cocchi', 'days': 'MWF', 'start_time': '13:00', 'end_time': '13:50'},
-    {'course_code': 'ECON 10223', 'course_name': 'Intro Microeconomics', 'section': '051', 'instructor': 'Rob Garnett', 'days': 'MWF', 'start_time': '13:00', 'end_time': '13:50'},
-    {'course_code': 'ECON 10223', 'course_name': 'Intro Microeconomics', 'section': '055', 'instructor': 'Jill Ann Trask', 'days': 'TR', 'start_time': '14:00', 'end_time': '15:20'},
-    {'course_code': 'ECON 10223', 'course_name': 'Intro Microeconomics', 'section': '060', 'instructor': 'Horacio Cocchi', 'days': 'MWF', 'start_time': '14:00', 'end_time': '14:50'},
-    {'course_code': 'ECON 10223', 'course_name': 'Intro Microeconomics', 'section': '065', 'instructor': 'Jill Ann Trask', 'days': 'TR', 'start_time': '15:30', 'end_time': '16:50'},
-    {'course_code': 'ECON 10223', 'course_name': 'Intro Microeconomics', 'section': '070', 'instructor': 'Horacio Cocchi', 'days': 'MWF', 'start_time': '15:00', 'end_time': '15:50'},
-    {'course_code': 'ECON 10223', 'course_name': 'Intro Microeconomics', 'section': '074', 'instructor': 'Lee Bailiff', 'days': 'MW', 'start_time': '16:00', 'end_time': '17:20'},
-    {'course_code': 'ECON 10223', 'course_name': 'Intro Microeconomics', 'section': '080', 'instructor': 'John Powers', 'days': 'T', 'start_time': '18:00', 'end_time': '20:40'},
-    {'course_code': 'ECON 10223', 'course_name': 'Intro Microeconomics', 'section': '081', 'instructor': 'Jill Ann Trask', 'days': 'TR', 'start_time': '17:00', 'end_time': '18:20'},
-    {'course_code': 'ECON 10223', 'course_name': 'Intro Micro - Honors', 'section': '616', 'instructor': 'Zack Hawley', 'days': 'TR', 'start_time': '09:30', 'end_time': '10:50'},
-    {'course_code': 'ECON 10233', 'course_name': 'Intro Macroeconomics', 'section': '010', 'instructor': 'Stephen Nicar', 'days': 'MWF', 'start_time': '09:00', 'end_time': '09:50'},
-    {'course_code': 'ECON 10233', 'course_name': 'Intro Macroeconomics', 'section': '050', 'instructor': 'Stephen Nicar', 'days': 'MWF', 'start_time': '13:00', 'end_time': '13:50'},
-    {'course_code': 'ECON 10233', 'course_name': 'Intro Macroeconomics', 'section': '060', 'instructor': 'Isabella Ann Yerby', 'days': 'MWF', 'start_time': '14:00', 'end_time': '14:50'},
-    {'course_code': 'ECON 10233', 'course_name': 'Intro Macroeconomics', 'section': '065', 'instructor': 'Lee Bailiff', 'days': 'TR', 'start_time': '15:30', 'end_time': '16:50'},
-    {'course_code': 'ECON 10233', 'course_name': 'Intro Macroeconomics', 'section': '066', 'instructor': 'Julie Russell', 'days': 'TR', 'start_time': '15:30', 'end_time': '16:50'},
-    {'course_code': 'ECON 10233', 'course_name': 'Intro Macroeconomics', 'section': '070', 'instructor': 'Isabella Ann Yerby', 'days': 'MWF', 'start_time': '15:00', 'end_time': '15:50'},
-    {'course_code': 'ECON 10233', 'course_name': 'Intro Macroeconomics', 'section': '080', 'instructor': 'Xiaodan Zhao', 'days': 'TR', 'start_time': '17:00', 'end_time': '18:20'},
-    {'course_code': 'ECON 10233', 'course_name': 'Intro Macroeconomics', 'section': '081', 'instructor': 'Julie Russell', 'days': 'TR', 'start_time': '17:00', 'end_time': '18:20'},
-    {'course_code': 'ECON 10233', 'course_name': 'Intro Macroeconomics', 'section': '082', 'instructor': 'John Lovett', 'days': 'T', 'start_time': '19:00', 'end_time': '21:40'},
-    {'course_code': 'ECON 10233', 'course_name': 'Intro Macroeconomics', 'section': '083', 'instructor': 'Justin Sheffield', 'days': 'R', 'start_time': '19:00', 'end_time': '21:40'},
-    {'course_code': 'ECON 10233', 'course_name': 'Intro Macroeconomics', 'section': '085', 'instructor': 'John Lovett', 'days': 'TR', 'start_time': '17:00', 'end_time': '18:20'},
-    {'course_code': 'ECON 30223', 'course_name': 'Intermediate Microeconomics', 'section': '010', 'instructor': 'Michael Butler', 'days': 'MWF', 'start_time': '09:00', 'end_time': '09:50'},
-    {'course_code': 'ECON 30223', 'course_name': 'Intermediate Microeconomics', 'section': '050', 'instructor': 'Douglas Butler', 'days': 'MWF', 'start_time': '13:00', 'end_time': '13:50'},
-    {'course_code': 'ECON 30233', 'course_name': 'Intermediate Macroeconomics', 'section': '045', 'instructor': 'Stepan Gordeev', 'days': 'TR', 'start_time': '12:30', 'end_time': '13:50'},
-    {'course_code': 'ECON 30233', 'course_name': 'Intermediate Macroeconomics', 'section': '060', 'instructor': 'Stephen Nicar', 'days': 'MWF', 'start_time': '14:00', 'end_time': '14:50'},
-    {'course_code': 'ECON 30233', 'course_name': 'Intermediate Macroeconomics', 'section': '065', 'instructor': 'Xiaodan Zhao', 'days': 'TR', 'start_time': '15:30', 'end_time': '16:50'},
-    {'course_code': 'ECON 30243', 'course_name': 'Contending Perspectives in Economics', 'section': '045', 'instructor': 'Rob Garnett', 'days': 'TR', 'start_time': '12:30', 'end_time': '13:50'},
-    {'course_code': 'ECON 30243', 'course_name': 'Contending Perspectives in Economics', 'section': '055', 'instructor': 'Rob Garnett', 'days': 'TR', 'start_time': '14:00', 'end_time': '15:20'},
-    {'course_code': 'ECON 30253', 'course_name': 'History of Economic Thought', 'section': '010', 'instructor': 'John Lovett', 'days': 'MWF', 'start_time': '09:00', 'end_time': '09:50'},
-    {'course_code': 'ECON 30433', 'course_name': 'Development Studies', 'section': '015', 'instructor': 'Dawn Elliott', 'days': 'TR', 'start_time': '09:30', 'end_time': '10:50'},
-    {'course_code': 'ECON 30443', 'course_name': 'Asian Economics', 'section': '074', 'instructor': 'Kiril Tochkov', 'days': 'MW', 'start_time': '16:00', 'end_time': '17:20'},
-    {'course_code': 'ECON 30443', 'course_name': 'Asian Economics', 'section': '080', 'instructor': 'Kiril Tochkov', 'days': 'MW', 'start_time': '17:30', 'end_time': '18:50'},
-    {'course_code': 'ECON 30483', 'course_name': 'Financial History', 'section': '020', 'instructor': 'Stephen Quinn', 'days': 'MWF', 'start_time': '10:00', 'end_time': '10:50'},
-    {'course_code': 'ECON 30483', 'course_name': 'Financial History', 'section': '030', 'instructor': 'Stephen Quinn', 'days': 'MWF', 'start_time': '11:00', 'end_time': '11:50'},
-    {'course_code': 'ECON 30543', 'course_name': 'Environmental Economics and Policy', 'section': '035', 'instructor': 'Weiwei Liu', 'days': 'TR', 'start_time': '11:00', 'end_time': '12:20'},
-    {'course_code': 'ECON 30733', 'course_name': 'Economic History of the US', 'section': '050', 'instructor': 'John Lovett', 'days': 'MWF', 'start_time': '13:00', 'end_time': '13:50'},
-    {'course_code': 'ECON 30773', 'course_name': 'Public Choice', 'section': '035', 'instructor': 'Rosemarie Fike', 'days': 'TR', 'start_time': '11:00', 'end_time': '12:20'},
-    {'course_code': 'ECON 30773', 'course_name': 'Public Choice', 'section': '045', 'instructor': 'Rosemarie Fike', 'days': 'TR', 'start_time': '12:30', 'end_time': '13:50'},
-    {'course_code': 'ECON 31223', 'course_name': 'Intermediate Micro: Math Approach', 'section': '015', 'instructor': 'Weiwei Liu', 'days': 'TR', 'start_time': '09:30', 'end_time': '10:50'},
-    {'course_code': 'ECON 40143', 'course_name': 'Public Finance', 'section': '035', 'instructor': 'Douglas Butler', 'days': 'TR', 'start_time': '11:00', 'end_time': '12:20'},
-    {'course_code': 'ECON 40153', 'course_name': 'Economics of Financial Markets', 'section': '065', 'instructor': 'Stephen Quinn', 'days': 'TR', 'start_time': '15:30', 'end_time': '16:50'},
-    {'course_code': 'ECON 40213', 'course_name': 'International Trade and Payments', 'section': '015', 'instructor': 'Rishav Bista', 'days': 'TR', 'start_time': '09:30', 'end_time': '10:50'},
-    {'course_code': 'ECON 40313', 'course_name': 'Econometrics', 'section': '035', 'instructor': 'Rishav Bista', 'days': 'TR', 'start_time': '11:00', 'end_time': '12:20'},
-    {'course_code': 'ECON 40313', 'course_name': 'Econometrics', 'section': '045', 'instructor': 'Rishav Bista', 'days': 'TR', 'start_time': '12:30', 'end_time': '13:50'},
-    {'course_code': 'ECON 40323', 'course_name': 'Time Series Econometrics', 'section': '080', 'instructor': 'Kiril Tochkov', 'days': 'MW', 'start_time': '19:00', 'end_time': '20:20'},
-    {'course_code': 'ECON 40513', 'course_name': 'Perspective in Internatl Econ', 'section': '005', 'instructor': 'John Harvey', 'days': 'TR', 'start_time': '08:00', 'end_time': '09:20'},
-    {'course_code': 'ECON 40970', 'course_name': 'Big Data in Economics', 'section': '055', 'instructor': 'Stepan Gordeev', 'days': 'TR', 'start_time': '14:00', 'end_time': '15:20'},
-    {'course_code': 'ECON 40970', 'course_name': 'Global Health', 'section': '056', 'instructor': 'Graham Gardner', 'days': 'TR', 'start_time': '14:00', 'end_time': '15:20'},
-]
-
 def seed_db():
     print("Creating tables...")
     Base.metadata.create_all(bind=engine)
@@ -221,72 +163,7 @@ def seed_db():
     db.add_all(constraints)
     db.commit()
 
-    print("Seeding schedule based on past data...")
-    schedule = Schedule(semester="Spring", year=2026, status="Finalized")
-    db.add(schedule)
-    db.commit()
-    db.refresh(schedule)
-
-    # Convert the db data into easily searchable formats
-    db_courses = db.query(Course).all()
-
-    db_profs = db.query(Professor).all()
-    # Map by last name for easiest lookup from "Lastname, Firstname" format
-    prof_map = {}
-    for p in db_profs:
-        last_name = p.name.split()[-1].lower()
-        prof_map[last_name] = p
-
-    db_timeslots = db.query(TimeSlot).all()
-    
-    sections_to_add = []
-    for row in PAST_SCHEDULE_DATA:
-        # Find course
-        course = None
-        candidates = [c for c in db_courses if c.code == row['course_code']]
-        if len(candidates) == 1:
-            course = candidates[0]
-        elif len(candidates) > 1:
-            for c in candidates:
-                if c.name == row.get('course_name'):
-                    course = c
-                    break
-            if not course:
-                course = candidates[0] # Grab first match if name doesn't match perfectly
-                
-        if not course:
-            print(f"Skipping unknown course: {row['course_code']}")
-            continue
-        
-        # Find professor
-        prof = None
-        if row['instructor']:
-            # The instructor is usually "Firstname Lastname"
-            last_name = row['instructor'].split()[-1].lower()
-            prof = prof_map.get(last_name)
-            if not prof:
-                print(f"Could not map instructor '{row['instructor']}' to a professor in DB")
-
-        # Find timeslot
-        timeslot = None
-        for ts in db_timeslots:
-            if ts.days == row['days'] and ts.start_time == row['start_time']:
-                timeslot = ts
-                break
-        
-        if not timeslot:
-            print(f"Could not map timeslot: {row['days']} {row['start_time']}-{row['end_time']}")
-
-        section = Section(
-            course_id=course.id,
-            professor_id=prof.id if prof else None,
-            timeslot_id=timeslot.id if timeslot else None,
-            schedule_id=schedule.id,
-            status="Approved"
-        )
-        sections_to_add.append(section)
-        
-    db.add_all(sections_to_add)
+    # No schedule seeded for now to allow for blank slate
     db.commit()
     db.close()
     print("Seed complete.")

@@ -737,20 +737,28 @@ export default function Dashboard() {
                     <CardTitle>Schedules — {termLabel}</CardTitle>
                     <CardDescription>{schedules.length} schedule(s) for {termLabel}</CardDescription>
                   </div>
-                  <div className="flex bg-gray-100 p-1 rounded-lg border">
+                  <div className="flex bg-gray-100/80 p-1 rounded-md border border-gray-200">
                     <Button
-                      variant={scheduleView === 'list' ? 'secondary' : 'ghost'}
+                      variant="ghost"
                       size="sm"
-                      className="h-7 px-3 gap-1.5"
+                      className={`h-7 px-3 gap-1.5 transition-all ${
+                        scheduleView === 'list' 
+                          ? 'bg-white shadow-sm text-gray-900 hover:bg-white' 
+                          : 'text-gray-500 hover:text-gray-700'
+                      }`}
                       onClick={() => setScheduleView('list')}
                     >
                       <LayoutList className="w-3.5 h-3.5" />
                       List
                     </Button>
                     <Button
-                      variant={scheduleView === 'calendar' ? 'secondary' : 'ghost'}
+                      variant="ghost"
                       size="sm"
-                      className="h-7 px-3 gap-1.5"
+                      className={`h-7 px-3 gap-1.5 transition-all ${
+                        scheduleView === 'calendar' 
+                          ? 'bg-white shadow-sm text-gray-900 hover:bg-white' 
+                          : 'text-gray-500 hover:text-gray-700'
+                      }`}
                       onClick={() => setScheduleView('calendar')}
                     >
                       <Calendar className="w-3.5 h-3.5" />
