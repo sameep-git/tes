@@ -31,6 +31,8 @@ export function MultiSelect({
   const [activeIndex, setActiveIndex] = React.useState(0);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const id = React.useId();
+  const optionsId = `multi-select-options-${id}`;
 
   const available = options.filter(
     (o) => !selected.includes(o.value) && 
@@ -39,8 +41,9 @@ export function MultiSelect({
   );
 
   const toggleOpen = () => {
-    setOpen(!open);
-    if (!open) {
+    const nextOpen = !open;
+    setOpen(nextOpen);
+    if (nextOpen) {
         setSearch('');
         setActiveIndex(0);
         // Focus input if searchable
@@ -61,16 +64,22 @@ export function MultiSelect({
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setActiveIndex((prev) => (prev + 1) % Math.max(available.length, 1));
+      if (!open) {
+        toggleOpen();
+      } else {
+        setActiveIndex((prev) => (prev + 1) % Math.max(available.length, 1));
+      }
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      setActiveIndex((prev) => (prev - 1 + available.length) % Math.max(available.length, 1));
+      if (open) {
+        setActiveIndex((prev) => (prev - 1 + available.length) % Math.max(available.length, 1));
+      }
     } else if (e.key === 'Enter') {
       e.preventDefault();
       if (open && available[activeIndex]) {
         handleSelect(available[activeIndex].value);
       } else if (!open) {
-        setOpen(true);
+        toggleOpen();
       }
     } else if (e.key === 'Escape') {
       setOpen(false);
@@ -114,19 +123,17 @@ export function MultiSelect({
       </div>
 
       <div className="relative">
-        <div 
-            className="flex items-center gap-2"
-            role="combobox"
-            aria-expanded={open}
-            aria-haspopup="listbox"
-            aria-controls="multi-select-options"
-        >
+        <div className="flex items-center gap-2">
             <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 className="text-xs h-8 gap-1.5 pl-2 pr-2"
                 onClick={toggleOpen}
+                onKeyDown={handleKeyDown}
+                aria-haspopup="listbox"
+                aria-expanded={open}
+                aria-controls={open ? optionsId : undefined}
             >
                 {open ? <ChevronDown className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
                 <span>{open ? 'Close' : 'Add Option'}</span>
@@ -138,6 +145,11 @@ export function MultiSelect({
                     <input
                         ref={inputRef}
                         type="text"
+                        role="combobox"
+                        aria-autocomplete="list"
+                        aria-expanded={open}
+                        aria-haspopup="listbox"
+                        aria-controls={optionsId}
                         className="w-full h-8 pl-8 pr-2 text-xs border rounded-md focus:outline-none focus:ring-1 focus:ring-primary bg-background"
                         placeholder="Search..."
                         value={search}
@@ -154,7 +166,7 @@ export function MultiSelect({
 
         {open && available.length > 0 && (
           <div 
-            id="multi-select-options"
+            id={optionsId}
             role="listbox"
             className="absolute z-50 mt-1 w-full min-w-[250px] bg-popover text-popover-foreground border rounded-md shadow-lg max-h-48 overflow-y-auto"
           >

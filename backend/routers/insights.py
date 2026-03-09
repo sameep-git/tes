@@ -71,7 +71,7 @@ def get_insights(
         models.Preference.professor_id,
         func.max(models.Preference.received_at).label("max_received_at")
     ).filter(
-        models.Preference.semester == semester,
+        func.lower(models.Preference.semester) == semester.lower(),
         models.Preference.year == year,
         models.Preference.admin_approved == True
     ).group_by(models.Preference.professor_id).subquery()
@@ -81,7 +81,7 @@ def get_insights(
         (models.Preference.professor_id == subquery.c.professor_id) &
         (models.Preference.received_at == subquery.c.max_received_at)
     ).filter(
-        models.Preference.semester == semester,
+        func.lower(models.Preference.semester) == semester.lower(),
         models.Preference.year == year,
         models.Preference.admin_approved == True
     )
@@ -113,13 +113,15 @@ def get_insights(
             ts_obj = all_timeslots.get(ts_label)
             if ts_obj:
                 _, hour = get_hour_bucket(ts_obj.start_time)
-                ts_pref_counter[hour] += 1
+                if hour != 99:
+                    ts_pref_counter[hour] += 1
             
         for ts_label in data.get("avoid_timeslots", []):
             ts_obj = all_timeslots.get(ts_label)
             if ts_obj:
                 _, hour = get_hour_bucket(ts_obj.start_time)
-                ts_avoid_counter[hour] += 1
+                if hour != 99:
+                    ts_avoid_counter[hour] += 1
 
     # Fetch all courses to build a canonical map
     all_courses = db.query(models.Course).all()
