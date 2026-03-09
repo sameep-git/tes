@@ -12,3 +12,7 @@ credentials.json
 token.json
 docs/
 data/
+
+# Dummy Data
+backend/generate_temp_preferences.py
+spring_2027_preferences.json

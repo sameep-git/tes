@@ -12,7 +12,7 @@ from typing import Optional
 
 from .database import SessionLocal
 from .models import Professor, Course, TimeSlot, Preference, Section
-from .email import poll_unread_replies, send_preference_email
+from .email_service import poll_unread_replies, send_preference_email
 from .ai import extract_preferences_from_email
 from .solver import run_solver
 

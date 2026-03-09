@@ -5,7 +5,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from . import models
 from .database import engine
-from .routers import health, professors, courses, schedules, preferences, chat, timeslots
+from .routers import health, professors, courses, schedules, preferences, chat, timeslots, insights
 from .tools import trigger_poll_unread_replies
 
 # Create DB tables
@@ -60,3 +60,4 @@ app.include_router(timeslots.router)
 app.include_router(schedules.router)
 app.include_router(preferences.router)
 app.include_router(chat.router)
+app.include_router(insights.router)

@@ -212,7 +212,6 @@ export default function ChatPanel() {
           <Bot className="w-5 h-5 text-indigo-600" />
           <h2 className="font-semibold text-gray-800">TES Agent</h2>
         </div>
-        <span className="flex h-2 w-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]"></span>
       </div>
 
       {/* Messages — plain scrollable div instead of ScrollArea to avoid viewport issues */}

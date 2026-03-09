@@ -114,7 +114,7 @@ def send_preference_email(prof_id: int, semester: str, year: int) -> dict:
             "plain"
         )
         message['To'] = str(prof.email)
-        message['Subject'] = f"Action Required: {semester} {year} Teaching Preferences"
+        message['Subject'] = f"Action Required: {semester.capitalize()} {year} Teaching Preferences"
 
         # 4. Add the custom header to track the reply
         token = f"PROF-{prof.id}-{semester}-{year}"

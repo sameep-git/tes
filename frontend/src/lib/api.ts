@@ -71,6 +71,27 @@ export interface Preference {
     professor: { id: number; name: string; email: string } | null;
 }
 
+export interface InsightsResponse {
+    summary: {
+        hotCourse: { code: string; name: string | null; canonicalKey: string; count: number } | null;
+        peakTime: { label: string; count: number } | null;
+        mostAvoidedTime: { label: string; count: number } | null;
+        readiness: { approved: number; total: number };
+    };
+    timeslotData: Array<{
+        label: string;
+        preferred: number;
+        avoided: number;
+        sortKey: number;
+    }>;
+    courseData: Array<{
+        code: string;
+        name: string;
+        preferred: number;
+        avoided: number;
+    }>;
+}
+
 // ---------------------------------------------------------------------------
 // API base URL
 // ---------------------------------------------------------------------------
@@ -88,6 +109,7 @@ export const queryKeys = {
     timeslots: ['timeslots'] as const,
     schedules: (semester: string, year: number) => ['schedules', semester, year] as const,
     preferences: (semester: string, year: number) => ['preferences', semester, year] as const,
+    insights: (semester: string, year: number) => ['insights', semester, year] as const,
 };
 
 // ---------------------------------------------------------------------------
@@ -108,6 +130,9 @@ export const fetchSchedules = (semester: string, year: number): Promise<Schedule
 
 export const fetchPreferences = (semester: string, year: number): Promise<Preference[]> =>
     fetch(`${API}/preferences?semester=${encodeURIComponent(semester)}&year=${year}`).then(r => jsonOrThrow<Preference[]>(r));
+
+export const fetchInsights = (semester: string, year: number): Promise<InsightsResponse> =>
+    fetch(`${API}/insights?semester=${encodeURIComponent(semester)}&year=${year}`).then(r => jsonOrThrow<InsightsResponse>(r));
 
 export const fetchCourseHistory = (courseId: number, semester?: string, year?: number): Promise<Section[]> => {
     let url = `${API}/courses/${courseId}/history`;
