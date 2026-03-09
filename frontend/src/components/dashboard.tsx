@@ -14,10 +14,11 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { AlertCircle, CheckCircle2, Clock, Eye, History, Loader2, Save, TrendingUp } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock, Eye, History, Loader2, Save, TrendingUp, Calendar, LayoutList } from 'lucide-react';
 import ChatPanel from './chat-panel';
 import { CourseHistoryDialog } from './course-history-dialog';
 import InsightsTab from './insights-tab';
+import ScheduleCalendar from './schedule-calendar';
 import { MultiSelect } from './ui/multi-select';
 import {
   queryKeys,
@@ -397,6 +398,7 @@ export default function Dashboard() {
   });
 
   const [viewingHistoryCourse, setViewingHistoryCourse] = useState<Course | null>(null);
+  const [scheduleView, setScheduleView] = useState<'list' | 'calendar'>('calendar');
   const approveMutation = useMutation({
     mutationFn: approvePreference,
     onSuccess: () => {
@@ -729,18 +731,45 @@ export default function Dashboard() {
 
             {/* ========== Schedules Tab ========== */}
             <TabsContent value="schedules" className="flex-1 mt-0">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Schedules — {termLabel}</CardTitle>
-                  <CardDescription>{schedules.length} schedule(s) for {termLabel}</CardDescription>
+              <Card className="h-full flex flex-col">
+                <CardHeader className="flex-shrink-0 flex flex-row items-center justify-between">
+                  <div>
+                    <CardTitle>Schedules — {termLabel}</CardTitle>
+                    <CardDescription>{schedules.length} schedule(s) for {termLabel}</CardDescription>
+                  </div>
+                  <div className="flex bg-gray-100 p-1 rounded-lg border">
+                    <Button
+                      variant={scheduleView === 'list' ? 'secondary' : 'ghost'}
+                      size="sm"
+                      className="h-7 px-3 gap-1.5"
+                      onClick={() => setScheduleView('list')}
+                    >
+                      <LayoutList className="w-3.5 h-3.5" />
+                      List
+                    </Button>
+                    <Button
+                      variant={scheduleView === 'calendar' ? 'secondary' : 'ghost'}
+                      size="sm"
+                      className="h-7 px-3 gap-1.5"
+                      onClick={() => setScheduleView('calendar')}
+                    >
+                      <Calendar className="w-3.5 h-3.5" />
+                      Calendar
+                    </Button>
+                  </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="flex-1 overflow-y-auto min-h-0">
                   {schedsLoading ? (
                     <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
                   ) : schedules.length === 0 ? (
                     <div className="text-center py-12 text-gray-400">
                       <p className="text-lg font-medium">No schedules for {termLabel}</p>
                       <p className="text-sm mt-1">Ask the TES Agent to run the solver to generate a schedule.</p>
+                    </div>
+                  ) : scheduleView === 'calendar' ? (
+                    <div className="h-full">
+                      {/* We show the first schedule for now, or could iterate if there are multiple drafts */}
+                      <ScheduleCalendar sections={schedules[0]?.sections || []} />
                     </div>
                   ) : (
                     <div className="space-y-6">

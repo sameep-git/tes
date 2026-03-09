@@ -89,6 +89,9 @@ class SectionResponse(BaseModel):
     course_name: Optional[str] = None
     professor_name: Optional[str] = None
     timeslot_label: Optional[str] = None
+    days: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
     semester: Optional[str] = None
     year: Optional[int] = None
 
@@ -107,6 +110,9 @@ class SectionResponse(BaseModel):
             course_name=section.course.name if section.course else None,
             professor_name=section.professor.name if section.professor else None,
             timeslot_label=section.timeslot.label if section.timeslot else None,
+            days=section.timeslot.days if section.timeslot else None,
+            start_time=section.timeslot.start_time if section.timeslot else None,
+            end_time=section.timeslot.end_time if section.timeslot else None,
             semester=section.schedule.semester if getattr(section, 'schedule', None) else None,
             year=section.schedule.year if getattr(section, 'schedule', None) else None,
         )

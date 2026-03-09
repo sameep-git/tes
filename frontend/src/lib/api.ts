@@ -33,6 +33,9 @@ export interface Section {
     course_name: string | null;
     professor_name: string | null;
     timeslot_label: string | null;
+    days: string | null;
+    start_time: string | null;
+    end_time: string | null;
     status: string;
     semester?: string;
     year?: number;
