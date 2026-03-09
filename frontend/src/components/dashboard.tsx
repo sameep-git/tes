@@ -14,10 +14,11 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { AlertCircle, CheckCircle2, Clock, Eye, History, Loader2, Save, X, Plus, ChevronDown, TrendingUp } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock, Eye, History, Loader2, Save, TrendingUp } from 'lucide-react';
 import ChatPanel from './chat-panel';
 import { CourseHistoryDialog } from './course-history-dialog';
 import InsightsTab from './insights-tab';
+import { MultiSelect } from './ui/multi-select';
 import {
   queryKeys,
   fetchProfessors,
@@ -47,74 +48,6 @@ function defaultSemester(): { semester: string; year: number } {
   if (month >= 8) return { semester: 'Spring', year: currentYear + 1 };
   if (month >= 3) return { semester: 'Fall', year: currentYear };
   return { semester: 'Spring', year: currentYear };
-}
-
-// ---------------------------------------------------------------------------
-// Multi-select chip component (for courses, timeslots, etc.)
-// ---------------------------------------------------------------------------
-function ChipSelect({
-  selected,
-  options,
-  onChange,
-}: {
-  selected: string[];
-  options: { value: string; label: string }[];
-  onChange: (val: string[]) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const available = options.filter(o => !selected.includes(o.value));
-
-  return (
-    <div className="space-y-1.5">
-      <div className="flex flex-wrap gap-1.5">
-        {selected.map(v => {
-          const opt = options.find(o => o.value === v);
-          return (
-            <Badge key={v} variant="outline" className="text-xs gap-1 pr-1">
-              {opt?.label ?? v}
-              <button
-                type="button"
-                className="ml-0.5 hover:text-red-500 transition-colors"
-                onClick={() => onChange(selected.filter(s => s !== v))}
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </Badge>
-          );
-        })}
-      </div>
-      {available.length > 0 && (
-        <div className="relative">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="text-xs h-7 gap-1"
-            onClick={() => setOpen(!open)}
-          >
-            <Plus className="w-3 h-3" /> Add <ChevronDown className="w-3 h-3" />
-          </Button>
-          {open && (
-            <div className="absolute z-50 mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto w-72">
-              {available.map(opt => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 transition-colors"
-                  onClick={() => {
-                    onChange([...selected, opt.value]);
-                    setOpen(false);
-                  }}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -290,28 +223,28 @@ function PreferenceDetailDialog({
                   />
                 </EditableField>
                 <EditableField label="Preferred Courses">
-                  <ChipSelect
+                  <MultiSelect
                     selected={(draft.preferred_courses as string[]) ?? []}
                     options={courseOptions}
                     onChange={val => updateDraft('preferred_courses', val)}
                   />
                 </EditableField>
                 <EditableField label="Avoid Courses">
-                  <ChipSelect
+                  <MultiSelect
                     selected={(draft.avoid_courses as string[]) ?? []}
                     options={courseOptions}
                     onChange={val => updateDraft('avoid_courses', val)}
                   />
                 </EditableField>
                 <EditableField label="Preferred Timeslots">
-                  <ChipSelect
+                  <MultiSelect
                     selected={(draft.preferred_timeslots as string[]) ?? []}
                     options={timeslotOptions}
                     onChange={val => updateDraft('preferred_timeslots', val)}
                   />
                 </EditableField>
                 <EditableField label="Avoid Timeslots">
-                  <ChipSelect
+                  <MultiSelect
                     selected={(draft.avoid_timeslots as string[]) ?? []}
                     options={timeslotOptions}
                     onChange={val => updateDraft('avoid_timeslots', val)}

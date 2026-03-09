@@ -5,78 +5,10 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
 } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Loader2, TrendingUp, AlertTriangle, CheckCircle2, Search, Info, AlertOctagon } from 'lucide-react';
+import { Loader2, TrendingUp, AlertTriangle, CheckCircle2, Info, AlertOctagon } from 'lucide-react';
 import { fetchInsights, queryKeys, Course } from '@/lib/api';
 import { useState, useMemo } from 'react';
-
-// Reuse existing multi-select logic from dashboard if possible, 
-// but we'll define a local version for the Course Comparison tool to ensure isolation.
-function CourseSearch({
-    selected,
-    options,
-    onChange,
-}: {
-    selected: string[];
-    options: { value: string; label: string }[];
-    onChange: (val: string[]) => void;
-}) {
-    const [search, setSearch] = useState('');
-    const filtered = options.filter(o => 
-        o.label.toLowerCase().includes(search.toLowerCase()) && !selected.includes(o.value)
-    ).slice(0, 5);
-
-    return (
-        <div className="space-y-3">
-            <div className="flex flex-wrap gap-2">
-                {selected.map(v => {
-                    const opt = options.find(o => o.value === v);
-                    const display = opt ? (opt.label.length > 20 ? opt.label.substring(0, 20) + '...' : opt.label) : v;
-                    return (
-                        <Badge key={v} variant="secondary" className="px-2 py-1 gap-1">
-                            {display}
-                            <button 
-                                type="button"
-                                aria-label={`Remove ${display}`}
-                                onClick={() => onChange(selected.filter(s => s !== v))} 
-                                className="hover:text-red-500"
-                            >
-                                x
-                            </button>
-                        </Badge>
-                    );
-                })}
-            </div>
-            <div className="relative">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-                <input
-                    type="text"
-                    placeholder="Search courses to compare..."
-                    className="w-full pl-9 pr-4 py-2 text-sm border rounded-md"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                />
-                {search && filtered.length > 0 && (
-                    <div className="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg overflow-hidden">
-                        {filtered.map(opt => (
-                            <button
-                                key={opt.value}
-                                type="button"
-                                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors"
-                                onClick={() => {
-                                    onChange([...selected, opt.value]);
-                                    setSearch('');
-                                }}
-                            >
-                                {opt.label}
-                            </button>
-                        ))}
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-}
+import { MultiSelect } from './ui/multi-select';
 
 interface InsightsTabProps {
     semester: string;
@@ -147,9 +79,9 @@ export default function InsightsTab({ semester, year, courses }: InsightsTabProp
         );
     }
 
-    const totalProfs = data.summary.readiness.total;
+    const totalProfs = data?.summary.readiness.total ?? 0;
     const readinessPercent = totalProfs > 0 
-        ? Math.round((data.summary.readiness.approved / totalProfs) * 100) 
+        ? Math.round((data!.summary.readiness.approved / totalProfs) * 100) 
         : 0;
 
     return (
@@ -165,7 +97,7 @@ export default function InsightsTab({ semester, year, courses }: InsightsTabProp
                             <span className="text-2xl font-bold">{readinessPercent}%</span>
                             <CheckCircle2 className={readinessPercent > 80 ? "text-green-500" : "text-amber-500"} />
                         </div>
-                        <p className="text-xs text-gray-500 mt-1">{data.summary.readiness.approved} of {data.summary.readiness.total} approved</p>
+                        <p className="text-xs text-gray-500 mt-1">{data!.summary.readiness.approved} of {totalProfs} approved</p>
                     </CardContent>
                 </Card>
 
@@ -175,10 +107,12 @@ export default function InsightsTab({ semester, year, courses }: InsightsTabProp
                     </CardHeader>
                     <CardContent>
                         <div className="flex items-center justify-between">
-                            <span className="text-xl font-bold truncate pr-2">{data.summary.hotCourse?.code || '—'}</span>
+                            <span className="text-xl font-bold truncate pr-2" title={data!.summary.hotCourse?.name || undefined}>
+                                {data!.summary.hotCourse?.code || '—'}
+                            </span>
                             <TrendingUp className="text-red-500 flex-shrink-0" />
                         </div>
-                        <p className="text-xs text-gray-500 mt-1">{data.summary.hotCourse?.count || 0} professors requested this</p>
+                        <p className="text-xs text-gray-500 mt-1">{data!.summary.hotCourse?.count || 0} professors requested this</p>
                     </CardContent>
                 </Card>
 
@@ -188,10 +122,10 @@ export default function InsightsTab({ semester, year, courses }: InsightsTabProp
                     </CardHeader>
                     <CardContent>
                         <div className="flex items-center justify-between">
-                            <span className="text-sm font-bold truncate pr-2">{data.summary.peakTime?.label || '—'}</span>
+                            <span className="text-sm font-bold truncate pr-2">{data!.summary.peakTime?.label || '—'}</span>
                             <TrendingUp className="text-red-500 flex-shrink-0" />
                         </div>
-                        <p className="text-xs text-gray-500 mt-1">{data.summary.peakTime?.count || 0} requests for this slot</p>
+                        <p className="text-xs text-gray-500 mt-1">{data!.summary.peakTime?.count || 0} requests for this slot</p>
                     </CardContent>
                 </Card>
 
@@ -201,10 +135,10 @@ export default function InsightsTab({ semester, year, courses }: InsightsTabProp
                     </CardHeader>
                     <CardContent>
                         <div className="flex items-center justify-between">
-                            <span className="text-sm font-bold truncate pr-2">{data.summary.mostAvoidedTime?.label || '—'}</span>
+                            <span className="text-sm font-bold truncate pr-2">{data!.summary.mostAvoidedTime?.label || '—'}</span>
                             <AlertTriangle className="text-amber-500 flex-shrink-0" />
                         </div>
-                        <p className="text-xs text-gray-500 mt-1">{data.summary.mostAvoidedTime?.count || 0} professors avoid this</p>
+                        <p className="text-xs text-gray-500 mt-1">{data!.summary.mostAvoidedTime?.count || 0} professors avoid this</p>
                     </CardContent>
                 </Card>
             </div>
@@ -219,7 +153,7 @@ export default function InsightsTab({ semester, year, courses }: InsightsTabProp
                     <CardContent>
                         <div className="h-[350px] w-full">
                             <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart data={data.timeslotData} margin={{ top: 20, right: 30, left: 0, bottom: 60 }} barCategoryGap="20%">
+                                    <BarChart data={data!.timeslotData} margin={{ top: 20, right: 30, left: 0, bottom: 60 }} barCategoryGap="20%">
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
                                         <XAxis 
                                             dataKey="label" 
@@ -252,13 +186,14 @@ export default function InsightsTab({ semester, year, courses }: InsightsTabProp
                         <CardDescription>Select specific courses to compare faculty interest</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-6">
-                        <CourseSearch 
+                        <MultiSelect 
                             selected={selectedCourseKeys} 
                             options={courses.map(c => ({ 
                                 value: `${c.code} | ${c.name}`, 
                                 label: `${c.code}: ${c.name}` 
                             }))}
                             onChange={setSelectedCourseKeys}
+                            placeholder="Search courses to compare..."
                         />
 
                         <div className="h-[250px] w-full mt-4 flex items-center justify-center">
