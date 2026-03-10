@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -427,6 +427,31 @@ export default function Dashboard() {
     return tags;
   }
 
+  // ---- Chat Panel Resizing ----
+  const [chatWidth, setChatWidth] = useState(450);
+  const startResizing = React.useCallback((mouseDownEvent: React.MouseEvent) => {
+    mouseDownEvent.preventDefault();
+    const startWidth = chatWidth;
+    const startX = mouseDownEvent.clientX;
+
+    const onMouseMove = (mouseMoveEvent: MouseEvent) => {
+      let newWidth = startWidth + (startX - mouseMoveEvent.clientX);
+      // Limits: min 300px, max 800px to keep data panel focused
+      newWidth = Math.max(300, Math.min(newWidth, 800));
+      setChatWidth(newWidth);
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = '';
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    document.body.style.cursor = 'col-resize';
+  }, [chatWidth]);
+
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
       {/* Sub-components / Modals */}
@@ -726,7 +751,7 @@ export default function Dashboard() {
 
             {/* ========== Insights Tab ========== */}
             <TabsContent value="insights" className="flex-1 mt-0">
-              <InsightsTab semester={semester} year={year} courses={courses} />
+              <InsightsTab semester={semester} year={year} courses={courses} chatWidth={chatWidth} />
             </TabsContent>
 
             {/* ========== Schedules Tab ========== */}
@@ -741,11 +766,10 @@ export default function Dashboard() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className={`h-7 px-3 gap-1.5 transition-all ${
-                        scheduleView === 'list' 
-                          ? 'bg-white shadow-sm text-gray-900 hover:bg-white' 
-                          : 'text-gray-500 hover:text-gray-700'
-                      }`}
+                      className={`h-7 px-3 gap-1.5 transition-all ${scheduleView === 'list'
+                        ? 'bg-white shadow-sm text-gray-900 hover:bg-white'
+                        : 'text-gray-500 hover:text-gray-700'
+                        }`}
                       onClick={() => setScheduleView('list')}
                     >
                       <LayoutList className="w-3.5 h-3.5" />
@@ -754,11 +778,10 @@ export default function Dashboard() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className={`h-7 px-3 gap-1.5 transition-all ${
-                        scheduleView === 'calendar' 
-                          ? 'bg-white shadow-sm text-gray-900 hover:bg-white' 
-                          : 'text-gray-500 hover:text-gray-700'
-                      }`}
+                      className={`h-7 px-3 gap-1.5 transition-all ${scheduleView === 'calendar'
+                        ? 'bg-white shadow-sm text-gray-900 hover:bg-white'
+                        : 'text-gray-500 hover:text-gray-700'
+                        }`}
                       onClick={() => setScheduleView('calendar')}
                     >
                       <Calendar className="w-3.5 h-3.5" />
@@ -830,8 +853,16 @@ export default function Dashboard() {
         </main>
       </div>
 
-      {/* Right Side: AI Agent Chat */}
-      <div className="w-[450px] flex-shrink-0 bg-white shadow-xl z-10 flex flex-col overflow-hidden">
+      {/* Right Side: AI Agent Chat with Resizer */}
+      <div
+        className="w-1 cursor-col-resize bg-gray-200 hover:bg-indigo-400 hover:w-1.5 transition-all flex-shrink-0 z-20"
+        onMouseDown={startResizing}
+        title="Drag to resize chat panel"
+      />
+      <div
+        className="flex-shrink-0 bg-white shadow-[0_0_20px_rgba(0,0,0,0.05)] z-10 flex flex-col overflow-hidden"
+        style={{ width: `${chatWidth}px` }}
+      >
         <ChatPanel />
       </div>
     </div>
