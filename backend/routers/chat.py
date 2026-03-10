@@ -155,7 +155,7 @@ async def chat_endpoint(request: Request):
             )
 
             # Handle function calls (may be multiple rounds)
-            max_rounds = 5  # Safety limit to prevent infinite tool loops
+            max_rounds = 30  # Safety limit to prevent infinite tool loops
             round_count = 0
 
             while response.function_calls and round_count < max_rounds:
@@ -208,7 +208,7 @@ async def chat_endpoint(request: Request):
             # Safety limit reached — Gemini is still requesting tools but we
             # must stop to avoid infinite loops. Surface this to the user.
             if response.function_calls:
-                yield f"data: {json.dumps({'type': 'error', 'content': 'The agent reached its maximum tool-call limit (5 rounds) without producing a final answer. Please rephrase or break your request into smaller steps.'})}\n\n"
+                yield f"data: {json.dumps({'type': 'error', 'content': 'The agent reached its maximum tool-call limit (30 rounds) without producing a final answer. Please rephrase or break your request into smaller steps.'})}\n\n"
                 yield f"data: {json.dumps({'type': 'done'})}\n\n"
                 return
 
