@@ -275,11 +275,12 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
             else:
                 return {
                     "status": "infeasible",
-                    "message": "The solver could not find any possible schedule that satisfies all hard constraints. No specific core extracted."
+                    "message": "The solver could not find any possible schedule that satisfies all hard constraints, and it could not identify a specific unsatisfiable core (conflicting set of constraints) to explain the infeasibility."
                 }
         else:
             return {
-                "status": "unknown",
+                "status": "infeasible",
+                "solver_status": solver.StatusName(status),
                 "message": f"Solver stopped with status: {solver.StatusName(status)}"
             }
 
