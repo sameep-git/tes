@@ -22,11 +22,12 @@ class ProfessorResponse(ProfessorBase):
 class CourseBase(BaseModel):
     code: str
     name: str
+    semester: str
+    year: int
     credits: int = 3
     level: int
     min_sections: int = 1
     max_sections: int = 5
-    requires_lab: bool = False
     core_ssc: bool = False
     core_ht: bool = False
     core_ga: bool = False

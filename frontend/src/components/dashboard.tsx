@@ -386,7 +386,10 @@ export default function Dashboard() {
 
   // ---- TanStack Query hooks ----
   const { data: professors = [], isLoading: profsLoading } = useQuery({ queryKey: queryKeys.professors, queryFn: fetchProfessors });
-  const { data: courses = [], isLoading: coursesLoading } = useQuery({ queryKey: queryKeys.courses, queryFn: fetchCourses });
+  const { data: courses = [], isLoading: coursesLoading } = useQuery({ 
+    queryKey: queryKeys.courses(semester, year), 
+    queryFn: () => fetchCourses(semester, year) 
+  });
   const { data: timeslots = [] } = useQuery({ queryKey: queryKeys.timeslots, queryFn: fetchTimeslots });
   const { data: schedules = [], isLoading: schedsLoading } = useQuery({
     queryKey: queryKeys.schedules(semester, year),
@@ -688,8 +691,8 @@ export default function Dashboard() {
             <TabsContent value="courses" className="flex-1 mt-0">
               <Card>
                 <CardHeader>
-                  <CardTitle>Course Catalog</CardTitle>
-                  <CardDescription>{courses.length} courses in the system</CardDescription>
+                  <CardTitle>Course Catalog — {termLabel}</CardTitle>
+                  <CardDescription>{courses.length} courses offered for {termLabel}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   {coursesLoading ? (
@@ -705,7 +708,6 @@ export default function Dashboard() {
                             <TableHead>Credits</TableHead>
                             <TableHead>Sections</TableHead>
                             <TableHead>Core</TableHead>
-                            <TableHead>Lab</TableHead>
                             <TableHead className="text-right">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -737,7 +739,6 @@ export default function Dashboard() {
                                   {coreTags(course).length === 0 && <span className="text-gray-300">—</span>}
                                 </div>
                               </TableCell>
-                              <TableCell>{course.requires_lab ? '✓' : ''}</TableCell>
                               <TableCell className="text-right">
                                 <Button
                                   size="sm"

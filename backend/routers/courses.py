@@ -8,8 +8,20 @@ from .. import models, schemas
 router = APIRouter(prefix="/api/courses", tags=["courses"])
 
 @router.get("/", response_model=List[schemas.CourseResponse])
-def get_courses(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    courses = db.query(models.Course).offset(skip).limit(limit).all()
+def get_courses(
+    semester: Optional[str] = None,
+    year: Optional[int] = None,
+    skip: int = 0, 
+    limit: int = 100, 
+    db: Session = Depends(get_db)
+):
+    query = db.query(models.Course)
+    if semester:
+        query = query.filter(models.Course.semester == semester)
+    if year:
+        query = query.filter(models.Course.year == year)
+        
+    courses = query.offset(skip).limit(limit).all()
     return courses
 
 @router.get("/{course_id}/history", response_model=List[schemas.SectionResponse])

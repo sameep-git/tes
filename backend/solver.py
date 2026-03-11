@@ -17,7 +17,7 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
     try:
         # 1. Fetch all data
         professors = db.query(Professor).filter(Professor.active == True).all()
-        courses = db.query(Course).all()
+        courses = db.query(Course).filter(Course.semester == semester, Course.year == year).all()
         timeslots = db.query(TimeSlot).filter(TimeSlot.active == True).all()
 
         preferences = {}

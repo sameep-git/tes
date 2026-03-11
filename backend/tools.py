@@ -37,15 +37,21 @@ def get_professor(prof_id: int) -> str:
         db.close()
 
 
-def get_courses() -> str:
-    """Retrieve all available courses and their core requirements."""
+def get_courses(semester: Optional[str] = None, year: Optional[int] = None) -> str:
+    """Retrieve all available courses and their core requirements. Optionally filter by semester and year."""
     db = SessionLocal()
     try:
-        courses = db.query(Course).all()
+        query = db.query(Course)
+        if semester:
+            query = query.filter(Course.semester == semester)
+        if year:
+            query = query.filter(Course.year == year)
+            
+        courses = query.all()
         return json.dumps([{
-            "id": c.id, "code": c.code, "name": c.name, "credits": c.credits,
+            "id": c.id, "code": c.code, "name": c.name, "semester": c.semester, "year": c.year, "credits": c.credits,
             "level": c.level, "min_sections": c.min_sections,
-            "max_sections": c.max_sections, "requires_lab": c.requires_lab,
+            "max_sections": c.max_sections,
             "core_ssc": c.core_ssc, "core_ht": c.core_ht,
             "core_ga": c.core_ga, "core_wem": c.core_wem
         } for c in courses])
@@ -427,35 +433,41 @@ def deactivate_professor(prof_id: int) -> str:
 def create_course(
     code: str,
     name: str,
+    semester: str,
+    year: int,
     level: int,
     credits: int = 3,
     min_sections: int = 1,
     max_sections: int = 5,
-    requires_lab: bool = False,
     core_ssc: bool = False,
     core_ht: bool = False,
     core_ga: bool = False,
     core_wem: bool = False
 ) -> str:
-    """Create a new course in the system."""
+    """Create a new course in the system for a specific semester and year."""
     db = SessionLocal()
     try:
-        existing = db.query(Course).filter(Course.code == code).first()
+        existing = db.query(Course).filter(
+            Course.code == code,
+            Course.name == name,
+            Course.semester == semester,
+            Course.year == year
+        ).first()
         if existing:
-            return json.dumps({"error": f"A course with code {code} already exists (ID {existing.id})."})
+            return json.dumps({"error": f"A course with code {code} and name {name} already exists for {semester} {year} (ID {existing.id})."})
 
         course = Course(
-            code=code, name=name, level=level, credits=credits,
+            code=code, name=name, semester=semester, year=year, level=level, credits=credits,
             min_sections=min_sections, max_sections=max_sections,
-            requires_lab=requires_lab, core_ssc=core_ssc,
-            core_ht=core_ht, core_ga=core_ga, core_wem=core_wem
+            core_ssc=core_ssc, core_ht=core_ht, core_ga=core_ga, core_wem=core_wem
         )
         db.add(course)
         db.commit()
         db.refresh(course)
         return json.dumps({
             "status": "success", "id": course.id,
-            "code": course.code, "name": course.name
+            "code": course.code, "name": course.name,
+            "semester": course.semester, "year": course.year
         })
     except Exception as e:
         db.rollback()
@@ -468,11 +480,12 @@ def update_course(
     course_id: int,
     code: Optional[str] = None,
     name: Optional[str] = None,
+    semester: Optional[str] = None,
+    year: Optional[int] = None,
     level: Optional[int] = None,
     credits: Optional[int] = None,
     min_sections: Optional[int] = None,
     max_sections: Optional[int] = None,
-    requires_lab: Optional[bool] = None,
     core_ssc: Optional[bool] = None,
     core_ht: Optional[bool] = None,
     core_ga: Optional[bool] = None,
@@ -489,6 +502,10 @@ def update_course(
             course.code = code
         if name is not None:
             course.name = name
+        if semester is not None:
+            course.semester = semester
+        if year is not None:
+            course.year = year
         if level is not None:
             course.level = level
         if credits is not None:
@@ -497,8 +514,6 @@ def update_course(
             course.min_sections = min_sections
         if max_sections is not None:
             course.max_sections = max_sections
-        if requires_lab is not None:
-            course.requires_lab = requires_lab
         if core_ssc is not None:
             course.core_ssc = core_ssc
         if core_ht is not None:
@@ -512,7 +527,8 @@ def update_course(
         db.refresh(course)
         return json.dumps({
             "status": "success", "id": course.id,
-            "code": course.code, "name": course.name
+            "code": course.code, "name": course.name,
+            "semester": course.semester, "year": course.year
         })
     except Exception as e:
         db.rollback()
@@ -567,7 +583,7 @@ def run_preflight_checks(semester: str, year: int) -> str:
 
         # 1. Capacity check
         profs = db.query(Professor).filter(Professor.active == True).all()
-        courses = db.query(Course).all()
+        courses = db.query(Course).filter(Course.semester == semester, Course.year == year).all()
 
         total_capacity = sum(p.max_sections for p in profs)
         total_demand = sum(c.min_sections for c in courses)
@@ -898,7 +914,7 @@ def update_preference_json(pref_id: int, updates: dict) -> str:
             return json.dumps({"error": f"Preference record {pref_id} not found."})
 
         # Build a lookup dict of all courses for resolving bare codes
-        all_courses = db.query(Course).all()
+        all_courses = db.query(Course).filter(Course.semester == pref.semester, Course.year == pref.year).all()
         code_to_keys: dict[str, list[str]] = {}
         for c in all_courses:
             key = f"{c.code} | {c.name}"
