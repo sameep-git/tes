@@ -522,7 +522,7 @@ export default function Dashboard() {
 
         <main className="flex-1 overflow-y-auto p-6 min-h-0">
           <Tabs defaultValue="inbox" className="w-full h-full flex flex-col">
-            <TabsList className="grid w-full grid-cols-5 max-w-2xl mb-6 flex-shrink-0">
+            <TabsList className="inline-flex w-fit mb-6 flex-shrink-0">
               <TabsTrigger value="inbox">
                 Preferences Inbox
                 {pendingCount > 0 && (
