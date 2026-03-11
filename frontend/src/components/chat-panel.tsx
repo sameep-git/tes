@@ -252,7 +252,7 @@ export default function ChatPanel() {
                 {activeTool ? (
                   <div className="flex items-center gap-2 text-indigo-600 font-medium">
                     <Wrench className="w-4 h-4" />
-                    <span>Executing <code className="bg-indigo-50 px-1.5 py-0.5 rounded text-xs border border-indigo-100">{activeTool}</code>...</span>
+                    <span>{activeTool}...</span>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">

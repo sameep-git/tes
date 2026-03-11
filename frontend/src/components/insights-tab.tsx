@@ -1,8 +1,8 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { 
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
+import {
+    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, TrendingUp, AlertTriangle, CheckCircle2, Info, AlertOctagon } from 'lucide-react';
@@ -14,9 +14,11 @@ interface InsightsTabProps {
     semester: string;
     year: number;
     courses: Course[];
+    chatWidth?: number;
 }
 
-export default function InsightsTab({ semester, year, courses }: InsightsTabProps) {
+export default function InsightsTab({ semester, year, courses, chatWidth = 450 }: InsightsTabProps) {
+    const isCompact = chatWidth >= 600;
     const { data, isLoading, isError } = useQuery({
         queryKey: queryKeys.insights(semester, year),
         queryFn: () => fetchInsights(semester, year),
@@ -80,14 +82,14 @@ export default function InsightsTab({ semester, year, courses }: InsightsTabProp
     }
 
     const totalProfs = data?.summary.readiness.total ?? 0;
-    const readinessPercent = totalProfs > 0 
-        ? Math.round((data!.summary.readiness.approved / totalProfs) * 100) 
+    const readinessPercent = totalProfs > 0
+        ? Math.round((data!.summary.readiness.approved / totalProfs) * 100)
         : 0;
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
             {/* Summary Highlights */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className={`grid gap-4 ${isCompact ? 'grid-cols-2' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4'}`}>
                 <Card>
                     <CardHeader className="pb-2">
                         <CardDescription className="text-xs uppercase font-semibold">Readiness Score</CardDescription>
@@ -143,9 +145,9 @@ export default function InsightsTab({ semester, year, courses }: InsightsTabProp
                 </Card>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+            <div className={`grid gap-6 ${isCompact ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-5'}`}>
                 {/* Timeslot Heatmap */}
-                <Card className="lg:col-span-3">
+                <Card className={isCompact ? "col-span-1" : "lg:col-span-3"}>
                     <CardHeader>
                         <CardTitle className="text-base">Demand Heatmap: Timeslots</CardTitle>
                         <CardDescription>Comparison of preferred vs. avoided timeslots (sorted by time)</CardDescription>
@@ -153,44 +155,44 @@ export default function InsightsTab({ semester, year, courses }: InsightsTabProp
                     <CardContent>
                         <div className="h-[350px] w-full">
                             <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart data={data!.timeslotData} margin={{ top: 20, right: 30, left: 0, bottom: 60 }} barCategoryGap="20%">
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                        <XAxis 
-                                            dataKey="label" 
-                                            angle={-45} 
-                                            textAnchor="end" 
-                                            height={60} 
-                                            interval={0}
-                                            tick={{ fontSize: 10 }}
-                                            tickMargin={10}
-                                        />
-                                        <YAxis style={{ fontSize: '12px' }} />
-                                        <Tooltip 
-                                            allowEscapeViewBox={{ x: false, y: true }}
-                                            wrapperStyle={{ zIndex: 1000 }}
-                                            contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                                        />
-                                        <Legend verticalAlign="top" height={36}/>
-                                        <Bar dataKey="preferred" name="Preferred" fill="#10b981" stackId="a" />
-                                        <Bar dataKey="avoided" name="Avoided" fill="#ef4444" stackId="a" />
-                                    </BarChart>
+                                <BarChart data={data!.timeslotData} margin={{ top: 20, right: 30, left: 0, bottom: 60 }} barCategoryGap="20%">
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                    <XAxis
+                                        dataKey="label"
+                                        angle={-45}
+                                        textAnchor="end"
+                                        height={60}
+                                        interval={0}
+                                        tick={{ fontSize: 10 }}
+                                        tickMargin={10}
+                                    />
+                                    <YAxis style={{ fontSize: '12px' }} />
+                                    <Tooltip
+                                        allowEscapeViewBox={{ x: false, y: true }}
+                                        wrapperStyle={{ zIndex: 1000 }}
+                                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                                    />
+                                    <Legend verticalAlign="top" height={36} />
+                                    <Bar dataKey="preferred" name="Preferred" fill="#10b981" stackId="a" />
+                                    <Bar dataKey="avoided" name="Avoided" fill="#ef4444" stackId="a" />
+                                </BarChart>
                             </ResponsiveContainer>
                         </div>
                     </CardContent>
                 </Card>
 
                 {/* Course Comparison */}
-                <Card className="lg:col-span-2">
+                <Card className={isCompact ? "col-span-1" : "lg:col-span-2"}>
                     <CardHeader>
                         <CardTitle className="text-base">Course Comparison Tool</CardTitle>
                         <CardDescription>Select specific courses to compare faculty interest</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-6">
-                        <MultiSelect 
-                            selected={selectedCourseKeys} 
-                            options={courses.map(c => ({ 
-                                value: `${c.code} | ${c.name}`, 
-                                label: `${c.code}: ${c.name}` 
+                        <MultiSelect
+                            selected={selectedCourseKeys}
+                            options={courses.map(c => ({
+                                value: `${c.code} | ${c.name}`,
+                                label: `${c.code}: ${c.name}`
                             }))}
                             onChange={setSelectedCourseKeys}
                             placeholder="Search courses to compare..."
@@ -202,13 +204,13 @@ export default function InsightsTab({ semester, year, courses }: InsightsTabProp
                                     <BarChart layout="vertical" data={filteredCourseData} margin={{ top: 5, right: 30, left: 40, bottom: 5 }} barCategoryGap="20%">
                                         <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
                                         <XAxis type="number" hide />
-                                        <YAxis 
-                                            dataKey="displayLabel" 
-                                            type="category" 
+                                        <YAxis
+                                            dataKey="displayLabel"
+                                            type="category"
                                             style={{ fontSize: '11px', fontWeight: 'bold' }}
                                             width={140}
                                         />
-                                        <Tooltip 
+                                        <Tooltip
                                             allowEscapeViewBox={{ x: false, y: true }}
                                             wrapperStyle={{ zIndex: 1000 }}
                                             cursor={{ fill: '#f9fafb' }}
@@ -221,8 +223,8 @@ export default function InsightsTab({ semester, year, courses }: InsightsTabProp
                             ) : (
                                 <div className="text-center p-8 bg-gray-50 rounded-lg border border-dashed w-full">
                                     <p className="text-sm text-gray-500">
-                                        {selectedCourseKeys.length > 0 
-                                            ? "No preference data for selected courses." 
+                                        {selectedCourseKeys.length > 0
+                                            ? "No preference data for selected courses."
                                             : "No course preference data available yet."}
                                     </p>
                                 </div>

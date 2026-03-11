@@ -11,6 +11,46 @@ from google.genai import types
 
 from ..tools import ALL_TOOLS, TOOL_REGISTRY
 
+FRIENDLY_TOOL_NAMES = {
+    "get_professor": "Looking up professor details",
+    "get_courses": "Fetching course list",
+    "get_unreplied_professors": "Checking who hasn't replied",
+    "trigger_poll_unread_replies": "Reading any new emails",
+    "trigger_send_preference_email": "Drafting preference email",
+    "trigger_send_all_preference_emails": "Sending collection emails",
+    "extract_and_save_preference_json": "Extracting preferences from email",
+    "get_preference": "Looking up preference details",
+    "get_professor_preference": "Finding professor's preferences",
+    "trigger_solver": "Optimizing schedule constraints",
+    "list_professors": "Fetching professor list",
+    "create_professor": "Adding new professor",
+    "update_professor": "Updating professor record",
+    "deactivate_professor": "Deactivating professor",
+    "create_course": "Adding new course",
+    "update_course": "Updating course record",
+    "delete_course": "Deleting course",
+    "run_preflight_checks": "Running scheduling preflight checks",
+    "create_manual_preference": "Creating manual preference",
+    "approve_preference": "Approving preference",
+    "list_schedules": "Fetching previous schedules",
+    "finalize_schedule": "Finalizing schedule",
+    "delete_schedule": "Deleting schedule draft",
+    "get_schedule_stats": "Calculating schedule statistics",
+    "update_preference_json": "Updating preference data",
+    "list_all_preferences": "Fetching all preferences",
+    "unapprove_preference": "Unapproving preference",
+    "delete_preference": "Deleting preference",
+    "list_timeslots": "Fetching timeslots",
+    "toggle_timeslot": "Updating timeslot status",
+    "get_email_log": "Checking email history",
+    "send_reminder_email": "Sending reminder email",
+    "list_constraints": "Fetching system constraints",
+    "update_constraint": "Updating constraint config",
+    "get_prime_time_config": "Checking prime time rules",
+    "update_prime_time_config": "Updating prime time rules",
+    "get_course_history": "Looking up course history"
+}
+
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 client = genai.Client() if os.getenv("GEMINI_API_KEY") else None
@@ -103,7 +143,8 @@ async def chat_endpoint(request: Request):
         config = types.GenerateContentConfig(
             tools=ALL_TOOLS,
             temperature=0.4,
-            system_instruction=SYSTEM_INSTRUCTION
+            system_instruction=SYSTEM_INSTRUCTION,
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
         )
 
         try:
@@ -114,7 +155,7 @@ async def chat_endpoint(request: Request):
             )
 
             # Handle function calls (may be multiple rounds)
-            max_rounds = 5  # Safety limit to prevent infinite tool loops
+            max_rounds = 30  # Safety limit to prevent infinite tool loops
             round_count = 0
 
             while response.function_calls and round_count < max_rounds:
@@ -128,9 +169,11 @@ async def chat_endpoint(request: Request):
                 for function_call in response.function_calls:
                     tool_name = function_call.name
                     tool_args = function_call.args
+                    
+                    display_name = FRIENDLY_TOOL_NAMES.get(tool_name, f"Running {tool_name}")
 
                     # 1. Yield SSE event telling the UI we are executing a tool
-                    yield f"data: {json.dumps({'type': 'tool_call', 'name': tool_name})}\n\n"
+                    yield f"data: {json.dumps({'type': 'tool_call', 'name': display_name})}\n\n"
                     await asyncio.sleep(0.1)
 
                     # 2. Execute the python function locally
@@ -165,7 +208,7 @@ async def chat_endpoint(request: Request):
             # Safety limit reached — Gemini is still requesting tools but we
             # must stop to avoid infinite loops. Surface this to the user.
             if response.function_calls:
-                yield f"data: {json.dumps({'type': 'error', 'content': 'The agent reached its maximum tool-call limit (5 rounds) without producing a final answer. Please rephrase or break your request into smaller steps.'})}\n\n"
+                yield f"data: {json.dumps({'type': 'error', 'content': 'The agent reached its maximum tool-call limit (30 rounds) without producing a final answer. Please rephrase or break your request into smaller steps.'})}\n\n"
                 yield f"data: {json.dumps({'type': 'done'})}\n\n"
                 return
 

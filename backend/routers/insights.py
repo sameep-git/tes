@@ -63,6 +63,7 @@ def get_insights(
     year: int,
     db: Session = Depends(get_db)
 ):
+    semester = semester.capitalize() if semester else semester
     # Use .count() instead of loading all objects
     total_active = db.query(models.Professor).filter(models.Professor.active == True).count()
     

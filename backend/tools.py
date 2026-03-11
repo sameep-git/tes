@@ -55,6 +55,7 @@ def get_courses() -> str:
 
 def get_unreplied_professors(year: int, semester: str) -> str:
     """Retrieve professors who have not replied yet for the given year and semester."""
+    semester = semester.capitalize() if semester else semester
     db = SessionLocal()
     try:
         subquery = db.query(Preference.professor_id).filter(
@@ -161,6 +162,7 @@ def trigger_send_preference_email(prof_id: int, semester: str, year: int) -> str
     Send a preference collection email to a specific professor.
     The email asks them to reply with their teaching preferences for the given semester.
     """
+    semester = semester.capitalize() if semester else semester
     result = send_preference_email(prof_id, semester, year)
     return json.dumps(result)
 
@@ -170,6 +172,7 @@ def trigger_send_all_preference_emails(semester: str, year: int) -> str:
     Send preference collection emails to ALL active professors who have not yet
     submitted preferences for the given semester and year.
     """
+    semester = semester.capitalize() if semester else semester
     db = SessionLocal()
     try:
         subquery = db.query(Preference.professor_id).filter(
@@ -268,6 +271,7 @@ def get_professor_preference(prof_id: int, semester: str, year: int) -> str:
     Retrieve the preference record for a specific professor and semester.
     Use this when you know the professor ID but not the preference ID.
     """
+    semester = semester.capitalize() if semester else semester
     db = SessionLocal()
     try:
         pref = db.query(Preference).filter(
@@ -299,6 +303,7 @@ def get_professor_preference(prof_id: int, semester: str, year: int) -> str:
 
 def trigger_solver(semester: str, year: int) -> str:
     """Run the Constraint Solver to generate a schedule for the given semester and year."""
+    semester = semester.capitalize() if semester else semester
     result = run_solver(semester, year)
     return json.dumps(result)
 
@@ -555,6 +560,7 @@ def run_preflight_checks(semester: str, year: int) -> str:
       2. Missing profs: any active professors without a preference record
       3. Unapproved prefs: any preference records with admin_approved = False
     """
+    semester = semester.capitalize() if semester else semester
     db = SessionLocal()
     try:
         blockers = []
@@ -639,6 +645,7 @@ def create_manual_preference(
     typed in the chat (e.g., "mornings only, prefers Micro"). Uses the AI
     extraction pipeline to generate structured JSON.
     """
+    semester = semester.capitalize() if semester else semester
     db = SessionLocal()
     try:
         prof = db.query(Professor).filter(Professor.id == prof_id).first()
@@ -950,6 +957,7 @@ def list_all_preferences(semester: str, year: int) -> str:
     Summarize all preference records for a semester: who replied, who is
     approved, who is pending, and who is missing entirely.
     """
+    semester = semester.capitalize() if semester else semester
     db = SessionLocal()
     try:
         profs = db.query(Professor).filter(Professor.active == True).all()
@@ -1113,6 +1121,7 @@ def send_reminder_email(prof_id: int, semester: str, year: int) -> str:
     Send a follow-up reminder email to a professor who has not yet replied
     with their teaching preferences. Skips if they already have a preference record.
     """
+    semester = semester.capitalize() if semester else semester
     db = SessionLocal()
     try:
         existing = db.query(Preference).filter(
@@ -1267,6 +1276,7 @@ def get_course_history(course_id: int, semester: Optional[str] = None, year: Opt
     Retrieve historical sections (who taught what, when, and what timeslot) for a given course ID.
     Only finalized schedules are included.
     """
+    semester = semester.capitalize() if semester else semester
     db = SessionLocal()
     try:
         from .models import Schedule
