@@ -452,6 +452,16 @@ export default function Dashboard() {
     document.body.style.cursor = 'col-resize';
   }, [chatWidth]);
 
+  const handleResizerKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      setChatWidth(prev => Math.min(800, prev + 20));
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      setChatWidth(prev => Math.max(300, prev - 20));
+    }
+  };
+
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
       {/* Sub-components / Modals */}
@@ -789,7 +799,7 @@ export default function Dashboard() {
                     </Button>
                   </div>
                 </CardHeader>
-                <CardContent className="flex-1 overflow-y-auto min-h-0">
+                <CardContent className={`flex-1 min-h-0 ${scheduleView === 'calendar' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
                   {schedsLoading ? (
                     <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
                   ) : schedules.length === 0 ? (
@@ -855,9 +865,17 @@ export default function Dashboard() {
 
       {/* Right Side: AI Agent Chat with Resizer */}
       <div
-        className="w-1 cursor-col-resize bg-gray-200 hover:bg-indigo-400 hover:w-1.5 transition-all flex-shrink-0 z-20"
+        role="separator"
+        aria-orientation="vertical"
+        aria-valuenow={chatWidth}
+        aria-valuemin={300}
+        aria-valuemax={800}
+        aria-label="Resize chat panel"
+        tabIndex={0}
+        className="w-1 cursor-col-resize bg-gray-200 hover:bg-indigo-400 hover:w-1.5 focus:bg-indigo-400 focus:w-1.5 focus:outline-none transition-all flex-shrink-0 z-20"
         onMouseDown={startResizing}
-        title="Drag to resize chat panel"
+        onKeyDown={handleResizerKeyDown}
+        title="Drag or use arrow keys to resize chat panel"
       />
       <div
         className="flex-shrink-0 bg-white shadow-[0_0_20px_rgba(0,0,0,0.05)] z-10 flex flex-col overflow-hidden"

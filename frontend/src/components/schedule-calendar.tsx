@@ -1,11 +1,10 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Section } from '@/lib/api';
-import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { 
-    Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription 
+import {
+    Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription
 } from '@/components/ui/dialog';
 import { Clock, User, BookOpen, AlertCircle } from 'lucide-react';
 
@@ -25,18 +24,18 @@ const DAY_LABELS: Record<string, string> = {
 // Helper to generate a stable color based on course code
 const getCourseColor = (courseCode: string | null) => {
     if (!courseCode) return 'hsl(0, 0%, 95%)';
-    
+
     // Simple hash function
     let hash = 0;
     for (let i = 0; i < courseCode.length; i++) {
         hash = courseCode.charCodeAt(i) + ((hash << 5) - hash);
     }
-    
+
     // Use HSL for better control over vibrancy and lightness
     const h = Math.abs(hash % 360);
     const s = 60 + (Math.abs(hash % 20)); // 60-80% saturation
     const l = 85 + (Math.abs(hash % 10)); // 85-95% lightness (pastel)
-    
+
     return `hsl(${h}, ${s}%, ${l}%)`;
 };
 
@@ -88,7 +87,7 @@ export default function ScheduleCalendar({ sections }: ScheduleCalendarProps) {
 
         sections.forEach(s => {
             if (!s.days || !s.start_time || !s.end_time) return;
-            
+
             // Split "MWF" into ["M", "W", "F"]
             const dayChars = s.days.split('');
             dayChars.forEach(char => {
@@ -133,12 +132,12 @@ export default function ScheduleCalendar({ sections }: ScheduleCalendarProps) {
                     {/* Time Gutter */}
                     <div className="bg-gray-50/30 border-r relative">
                         {hours.map(hour => (
-                            <div 
-                                key={hour} 
+                            <div
+                                key={hour}
                                 className="absolute left-0 right-0 text-[10px] text-gray-400 text-center -translate-y-1/2"
                                 style={{ top: `${(hour - timeRange.min) * 100}px` }}
                             >
-                                {hour > 12 ? `${hour-12} PM` : hour === 12 ? '12 PM' : `${hour} AM`}
+                                {hour > 12 ? `${hour - 12} PM` : hour === 12 ? '12 PM' : `${hour} AM`}
                             </div>
                         ))}
                     </div>
@@ -148,10 +147,10 @@ export default function ScheduleCalendar({ sections }: ScheduleCalendarProps) {
                         <div key={day} className="border-r last:border-r-0 relative min-h-full bg-grid-slate-100">
                             {/* Hour Grid Lines */}
                             {hours.map(hour => (
-                                <div 
-                                    key={hour} 
+                                <div
+                                    key={hour}
                                     className="absolute left-0 right-0 border-b border-gray-100"
-                                    style={{ 
+                                    style={{
                                         top: `${(hour - timeRange.min) * 100}px`,
                                         height: '100px'
                                     }}
@@ -164,7 +163,7 @@ export default function ScheduleCalendar({ sections }: ScheduleCalendarProps) {
                                 const heightPx = getDurationHeight(s.start_time!, s.end_time!);
                                 const bgColor = getCourseColor(s.course_code);
                                 const borderColor = getCourseDarkColor(s.course_code);
-                                
+
                                 // Basic overlap adjustment: if multiple items start at the same time, shift them
                                 const sameStartTime = calendarData[day].filter(other => other.start_time === s.start_time);
                                 const order = sameStartTime.indexOf(s);
@@ -175,7 +174,7 @@ export default function ScheduleCalendar({ sections }: ScheduleCalendarProps) {
                                     <div
                                         key={`${s.id}-${idx}`}
                                         className="absolute rounded-md p-1.5 text-[10px] sm:text-xs overflow-hidden cursor-pointer transition-all hover:ring-2 hover:ring-offset-1 hover:z-20 border-l-4 shadow-sm"
-                                        style={{ 
+                                        style={{
                                             top: `${topPx}px`,
                                             height: `${heightPx}px`,
                                             left: `${left}%`,
@@ -209,7 +208,7 @@ export default function ScheduleCalendar({ sections }: ScheduleCalendarProps) {
                             {selectedSection?.course_name}
                         </DialogDescription>
                     </DialogHeader>
-                    
+
                     <div className="grid gap-4 py-4">
                         <div className="flex items-center gap-3 text-sm">
                             <User className="w-4 h-4 text-gray-400" />
