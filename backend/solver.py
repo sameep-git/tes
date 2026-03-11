@@ -20,8 +20,6 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
         courses = db.query(Course).all()
         timeslots = db.query(TimeSlot).filter(TimeSlot.active == True).all()
 
-        # Build a dictionary of professor preferences for quick lookup
-        # If they haven't replied, they won't have a preference object.
         preferences = {}
         for p in professors:
             pref = db.query(Preference).filter(
@@ -30,7 +28,6 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
                 Preference.year == year
             ).first()
             if pref and pref.parsed_json:
-                # parsed_json is stored as a dict if we used model_dump()
                 preferences[p.id] = pref.parsed_json
             else:
                 preferences[p.id] = {}
@@ -42,19 +39,24 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
         model = cp_model.CpModel()
 
         # 3. Create Decision Variables
-        # assign[p, c, t] = 1 if Professor p teaches Course c at TimeSlot t
         assign = {}
         for p in professors:
             for c in courses:
                 for t in timeslots:
                     assign[(p.id, c.id, t.id)] = model.NewBoolVar(f"assign_p{p.id}_c{c.id}_t{t.id}")
 
+        assumptions_map = {}
+
         # 4. HARD CONSTRAINTS
         
         # A. A professor cannot teach more than one course at the exact same time
+        # We use a single global assumption for this since it's a universal law of physics.
+        b_physics = model.NewBoolVar("assump_A_physics")
         for p in professors:
             for t in timeslots:
-                model.AddAtMostOne(assign[(p.id, c.id, t.id)] for c in courses)
+                model.AddAtMostOne(assign[(p.id, c.id, t.id)] for c in courses).OnlyEnforceIf(b_physics)
+        model.AddAssumption(b_physics)
+        assumptions_map[b_physics.Index()] = "A professor cannot teach multiple courses at the exact same time."
 
         # B. Minimum/Maximum Course Sections
         for c in courses:
@@ -62,8 +64,16 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
             for p in professors:
                 for t in timeslots:
                     total_sections.append(assign[(p.id, c.id, t.id)])
-            model.Add(sum(total_sections) >= c.min_sections)
-            model.Add(sum(total_sections) <= c.max_sections)
+            
+            b_min = model.NewBoolVar(f"assump_B_min_c{c.id}")
+            model.Add(sum(total_sections) >= c.min_sections).OnlyEnforceIf(b_min)
+            model.AddAssumption(b_min)
+            assumptions_map[b_min.Index()] = f"Course {c.code} requires a minimum of {c.min_sections} sections."
+            
+            b_max = model.NewBoolVar(f"assump_B_max_c{c.id}")
+            model.Add(sum(total_sections) <= c.max_sections).OnlyEnforceIf(b_max)
+            model.AddAssumption(b_max)
+            assumptions_map[b_max.Index()] = f"Course {c.code} is capped at a maximum of {c.max_sections} sections."
 
         # C. Professor Load Limits & Sabbatical
         for p in professors:
@@ -76,23 +86,21 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
                     total_classes.append(assign[(p.id, c.id, t.id)])
 
             if on_leave:
-                # Professor is on sabbatical, assign 0 classes
-                model.Add(sum(total_classes) == 0)
+                b = model.NewBoolVar(f"assump_C_leave_p{p.id}")
+                model.Add(sum(total_classes) == 0).OnlyEnforceIf(b)
+                model.AddAssumption(b)
+                assumptions_map[b.Index()] = f"Professor {p.name} is on leave and must teach 0 sections."
             else:
-                # Get the strictest limit: max_sections from DB, or max_load from preference email
                 db_limit = p.max_sections
                 email_limit = pref.get("max_load")
-                
-                # If they explicitly requested a max_load, use the smaller of the two to be safe
-                if email_limit is not None:
-                    limit = min(db_limit, email_limit)
-                else:
-                    limit = db_limit
+                limit = min(db_limit, email_limit) if email_limit is not None else db_limit
                     
-                model.Add(sum(total_classes) <= limit)
+                b = model.NewBoolVar(f"assump_C_load_p{p.id}")
+                model.Add(sum(total_classes) <= limit).OnlyEnforceIf(b)
+                model.AddAssumption(b)
+                assumptions_map[b.Index()] = f"Professor {p.name} cannot teach more than {limit} sections."
 
         # D. Core Requirements Constraint
-        # At least one section of each required core tag must be scheduled
         ssc_sections = []
         ht_sections = []
         ga_sections = []
@@ -107,19 +115,40 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
                     if c.core_ga: ga_sections.append(var)
                     if c.core_wem: wem_sections.append(var)
         
-        if ssc_sections: model.Add(sum(ssc_sections) >= 1)
-        if ht_sections: model.Add(sum(ht_sections) >= 1)
-        if ga_sections: model.Add(sum(ga_sections) >= 1)
-        if wem_sections: model.Add(sum(wem_sections) >= 1)
+        if ssc_sections: 
+            b = model.NewBoolVar("assump_D_ssc")
+            model.Add(sum(ssc_sections) >= 1).OnlyEnforceIf(b)
+            model.AddAssumption(b)
+            assumptions_map[b.Index()] = "At least one Social Science Core (SSC) course must be scheduled."
+            
+        if ht_sections: 
+            b = model.NewBoolVar("assump_D_ht")
+            model.Add(sum(ht_sections) >= 1).OnlyEnforceIf(b)
+            model.AddAssumption(b)
+            assumptions_map[b.Index()] = "At least one Historical Traditions (HT) core course must be scheduled."
+            
+        if ga_sections: 
+            b = model.NewBoolVar("assump_D_ga")
+            model.Add(sum(ga_sections) >= 1).OnlyEnforceIf(b)
+            model.AddAssumption(b)
+            assumptions_map[b.Index()] = "At least one Global Awareness (GA) core course must be scheduled."
+            
+        if wem_sections: 
+            b = model.NewBoolVar("assump_D_wem")
+            model.Add(sum(wem_sections) >= 1).OnlyEnforceIf(b)
+            model.AddAssumption(b)
+            assumptions_map[b.Index()] = "At least one Written Expression (WEM) core course must be scheduled."
 
         # E. Timeslot Capacity
-        # Each timeslot has a max_classes cap (e.g. only 5 rooms available at that hour)
+        # We can also group this globally if it causes spam, but individual room limits might be nice to know.
         for t in timeslots:
             classes_in_slot = [assign[(p.id, c.id, t.id)] for p in professors for c in courses]
-            model.Add(sum(classes_in_slot) <= t.max_classes)
+            b = model.NewBoolVar(f"assump_E_cap_t{t.id}")
+            model.Add(sum(classes_in_slot) <= t.max_classes).OnlyEnforceIf(b)
+            model.AddAssumption(b)
+            assumptions_map[b.Index()] = f"Timeslot {t.label} cannot exceed its capacity of {t.max_classes} concurrent classes."
 
-        # F. Prime-Time Cap (configurable via Constraint table)
-        # Limits what percentage of total sections can start during the prime window
+        # F. Prime-Time Cap
         from .models import Constraint
         prime_row = db.query(Constraint).filter(
             Constraint.name == "prime_time", Constraint.active == True
@@ -136,11 +165,13 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
                               for p in professors for c in courses for t in prime_slots]
                 all_vars = [assign[(p.id, c.id, t.id)]
                             for p in professors for c in courses for t in timeslots]
-                # Linearized: prime_count * 100 <= max_pct * total_count
-                model.Add(sum(prime_vars) * 100 <= max_pct * sum(all_vars))
+                
+                b = model.NewBoolVar("assump_F_prime")
+                model.Add(sum(prime_vars) * 100 <= max_pct * sum(all_vars)).OnlyEnforceIf(b)
+                model.AddAssumption(b)
+                assumptions_map[b.Index()] = f"Prime-time cap exceeded: max {max_pct}% of sections allowed between {pt_start} and {pt_end}."
 
-        # G. Blocked Timeslots (configurable via Constraint table)
-        # Completely prevents scheduling in specific timeslots
+        # G. Blocked Timeslots
         blocked_row = db.query(Constraint).filter(
             Constraint.name == "blocked_timeslots", Constraint.active == True
         ).first()
@@ -148,9 +179,12 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
             blocked_labels = set(blocked_row.value_json.get("labels", []))
             for t in timeslots:
                 if t.label in blocked_labels:
+                    b = model.NewBoolVar(f"assump_G_blk_t{t.id}")
                     for p in professors:
                         for c in courses:
-                            model.Add(assign[(p.id, c.id, t.id)] == 0)
+                            model.Add(assign[(p.id, c.id, t.id)] == 0).OnlyEnforceIf(b)
+                    model.AddAssumption(b)
+                    assumptions_map[b.Index()] = f"Timeslot {t.label} is marked as blocked by administration."
 
         # 5. SOFT CONSTRAINTS (Objective Function)
         objective_terms = []
@@ -170,26 +204,16 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
                 for t in timeslots:
                     var = assign[(p.id, c.id, t.id)]
 
-                    # Points for Course match (handle both "CODE" and "CODE | Name" formats)
                     if c.code in preferred_courses or course_key in preferred_courses:
                         objective_terms.append(var * 10)
-                    
                     if c.code in avoid_courses or course_key in avoid_courses:
                         objective_terms.append(var * -100)
-                    
-                    # Points for Course Level match
                     if c.level in preferred_levels:
                         objective_terms.append(var * 5)
-                    
-                    # Points for Timeslot match
                     if t.label in preferred_timeslots:
                         objective_terms.append(var * 5)
-                    
                     if t.label in avoid_timeslots:
                         objective_terms.append(var * -50)
-                    
-                    # Points for Avoid Days
-                    # E.g., if avoid_days=["F"] and t.days="MWF", we penalize
                     for day in avoid_days:
                         if day in t.days:
                             objective_terms.append(var * -50)
@@ -198,13 +222,11 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
 
         # 6. Run the Solver
         solver = cp_model.CpSolver()
-        # Set a 30 second time limit so the API doesn't hang forever
         solver.parameters.max_time_in_seconds = 30.0 
         
         status = solver.Solve(model)
 
         if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
-            # 7. Save the Resulting Schedule
             new_schedule = Schedule(
                 semester=semester,
                 year=year,
@@ -212,7 +234,7 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
                 solver_log=f"Status: {solver.StatusName(status)}\nScore: {solver.ObjectiveValue()}\nTime: {solver.WallTime()}s"
             )
             db.add(new_schedule)
-            db.commit() # Commit to get the schedule ID
+            db.commit() 
             
             sections_created = 0
             for p in professors:
@@ -238,10 +260,28 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
                 "sections_created": sections_created,
                 "score": solver.ObjectiveValue()
             }
+        elif status == cp_model.INFEASIBLE:
+            conflict_indices = solver.SufficientAssumptionsForInfeasibility()
+            
+            if conflict_indices:
+                bottlenecks = [assumptions_map[idx] for idx in conflict_indices]
+                unique_bottlenecks = list(dict.fromkeys(bottlenecks))
+                
+                return {
+                    "status": "infeasible",
+                    "message": "The solver failed because the following constraints conflict with each other:",
+                    "bottlenecks": unique_bottlenecks
+                }
+            else:
+                return {
+                    "status": "infeasible",
+                    "message": "The solver could not find any possible schedule that satisfies all hard constraints, and it could not identify a specific unsatisfiable core (conflicting set of constraints) to explain the infeasibility."
+                }
         else:
             return {
                 "status": "infeasible",
-                "message": "The solver could not find any possible schedule that satisfies all hard constraints."
+                "solver_status": solver.StatusName(status),
+                "message": f"Solver stopped with status: {solver.StatusName(status)}"
             }
 
     except Exception as e:
