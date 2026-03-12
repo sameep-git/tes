@@ -5,6 +5,8 @@ from typing import List, Optional
 from ..database import get_db
 from .. import models, schemas
 
+from sqlalchemy import func
+
 router = APIRouter(prefix="/api/courses", tags=["courses"])
 
 @router.get("/", response_model=List[schemas.CourseResponse])
@@ -16,9 +18,9 @@ def get_courses(
     db: Session = Depends(get_db)
 ):
     query = db.query(models.Course)
-    if semester:
-        query = query.filter(models.Course.semester == semester)
-    if year:
+    if semester is not None:
+        query = query.filter(func.lower(models.Course.semester) == semester.lower())
+    if year is not None:
         query = query.filter(models.Course.year == year)
         
     courses = query.offset(skip).limit(limit).all()
@@ -31,14 +33,22 @@ def get_course_history(
     year: Optional[int] = None, 
     db: Session = Depends(get_db)
 ):
+    # Get the course to find its code
+    course = db.query(models.Course).filter(models.Course.id == course_id).first()
+    if not course:
+        return []
+
+    # Find all courses with the same code to get cross-term history
+    matching_course_ids = db.query(models.Course.id).filter(models.Course.code == course.code)
+
     query = db.query(models.Section).join(models.Schedule).filter(
-        models.Section.course_id == course_id,
+        models.Section.course_id.in_(matching_course_ids),
         models.Schedule.status == "Finalized" # Only show finalized history
     )
     
-    if semester:
-        query = query.filter(models.Schedule.semester == semester)
-    if year:
+    if semester is not None:
+        query = query.filter(func.lower(models.Schedule.semester) == semester.lower())
+    if year is not None:
         query = query.filter(models.Schedule.year == year)
         
     # Sort by year descending, then semester

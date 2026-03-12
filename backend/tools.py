@@ -17,6 +17,8 @@ from .ai import extract_preferences_from_email
 from .solver import run_solver
 
 
+from sqlalchemy import func
+
 # =========================================================================
 # Existing tools (migrated from chat.py & mcp_server/server.py)
 # =========================================================================
@@ -42,9 +44,9 @@ def get_courses(semester: Optional[str] = None, year: Optional[int] = None) -> s
     db = SessionLocal()
     try:
         query = db.query(Course)
-        if semester:
-            query = query.filter(Course.semester == semester)
-        if year:
+        if semester is not None:
+            query = query.filter(func.lower(Course.semester) == semester.lower())
+        if year is not None:
             query = query.filter(Course.year == year)
             
         courses = query.all()

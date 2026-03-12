@@ -129,7 +129,7 @@ export const fetchProfessors = (): Promise<Professor[]> => fetch(`${API}/profess
 export const fetchCourses = (semester?: string, year?: number): Promise<Course[]> => {
     const params = new URLSearchParams();
     if (semester) params.append('semester', semester);
-    if (year) params.append('year', year.toString());
+    if (year !== undefined && year !== null) params.append('year', year.toString());
     const query = params.toString() ? `?${params.toString()}` : '';
     return fetch(`${API}/courses${query}`).then(r => jsonOrThrow<Course[]>(r));
 };
