@@ -16,11 +16,12 @@ export interface Course {
     id: number;
     code: string;
     name: string;
+    semester: string;
+    year: number;
     credits: number;
     level: number;
     min_sections: number;
     max_sections: number;
-    requires_lab: boolean;
     core_ssc: boolean;
     core_ht: boolean;
     core_ga: boolean;
@@ -108,7 +109,7 @@ const API = `${API_BASE}/api`;
 
 export const queryKeys = {
     professors: ['professors'] as const,
-    courses: ['courses'] as const,
+    courses: (semester: string, year: number) => ['courses', semester, year] as const,
     timeslots: ['timeslots'] as const,
     schedules: (semester: string, year: number) => ['schedules', semester, year] as const,
     preferences: (semester: string, year: number) => ['preferences', semester, year] as const,
@@ -125,7 +126,13 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
 }
 
 export const fetchProfessors = (): Promise<Professor[]> => fetch(`${API}/professors`).then(r => jsonOrThrow<Professor[]>(r));
-export const fetchCourses = (): Promise<Course[]> => fetch(`${API}/courses`).then(r => jsonOrThrow<Course[]>(r));
+export const fetchCourses = (semester?: string, year?: number): Promise<Course[]> => {
+    const params = new URLSearchParams();
+    if (semester) params.append('semester', semester);
+    if (year !== undefined && year !== null) params.append('year', year.toString());
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return fetch(`${API}/courses${query}`).then(r => jsonOrThrow<Course[]>(r));
+};
 export const fetchTimeslots = (): Promise<TimeSlot[]> => fetch(`${API}/timeslots`).then(r => jsonOrThrow<TimeSlot[]>(r));
 
 export const fetchSchedules = (semester: string, year: number): Promise<Schedule[]> =>

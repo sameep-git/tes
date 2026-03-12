@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from .database import engine, Base, SessionLocal
-from .models import Professor, Course, TimeSlot, Constraint, Schedule, Section
+from .models import Professor, Course, TimeSlot, Constraint, Schedule, Section, Preference
 
 def seed_db():
     print("Creating tables...")
@@ -48,54 +48,85 @@ def seed_db():
     db.add_all(professors)
 
     print("Seeding courses...")
+    semester = "Fall"
+    year = 2026
+    
     courses = [
         # 10000 level courses (Intros)
-        Course(code="ECON 10223", name="Intro Microeconomics", level=10000, min_sections=4, max_sections=8, core_ssc=True),
-        Course(code="ECON 10233", name="Intro Macroeconomics", level=10000, min_sections=4, max_sections=8, core_ssc=True),
-        Course(code="ECON 10223", name="Intro Micro - Honors", level=10000, min_sections=1, max_sections=2, core_ssc=True),
-        Course(code="ECON 10233", name="Intro Macro - Honors", level=10000, min_sections=1, max_sections=2, core_ssc=True),
+        Course(code="ECON 10223", name="Intro Microeconomics", semester=semester, year=year, level=10000, min_sections=4, max_sections=8, core_ssc=True),
+        Course(code="ECON 10233", name="Intro Macroeconomics", semester=semester, year=year, level=10000, min_sections=4, max_sections=8, core_ssc=True),
+        Course(code="ECON 10223", name="Intro Micro - Honors", semester=semester, year=year, level=10000, min_sections=1, max_sections=2, core_ssc=True),
+        Course(code="ECON 10233", name="Intro Macro - Honors", semester=semester, year=year, level=10000, min_sections=1, max_sections=2, core_ssc=True),
 
         # 30000 level courses (Foundations & Electives)
-        Course(code="ECON 30223", name="Intermediate Microeconomics", level=30000, min_sections=2, max_sections=3),
-        Course(code="ECON 31223", name="Intermediate Micro: Math Approach", level=30000, min_sections=1, max_sections=2),
-        Course(code="ECON 30233", name="Intermediate Macroeconomics", level=30000, min_sections=2, max_sections=3),
-        Course(code="ECON 31233", name="Intermediate Macro: Math Approach", level=30000, min_sections=1, max_sections=2),
-        Course(code="ECON 30243", name="Contending Perspectives in Economics", level=30000, min_sections=2, max_sections=3),
-        Course(code="ECON 30213", name="Development Theory", level=30000, min_sections=1, max_sections=2),
-        Course(code="ECON 30253", name="History of Economic Thought", level=30000, min_sections=1, max_sections=2, core_wem=True),
-        Course(code="ECON 30433", name="Development Studies", level=30000, min_sections=1, max_sections=2, core_ga=True),
-        Course(code="ECON 30443", name="Asian Economics", level=30000, min_sections=1, max_sections=2, core_wem=True),
-        Course(code="ECON 30473", name="Regional and Urban Economics", level=30000, min_sections=1, max_sections=2),
-        Course(code="ECON 30483", name="Financial History", level=30000, min_sections=1, max_sections=2, core_ht=True, core_wem=True),
-        Course(code="ECON 30503", name="Health Economics", level=30000, min_sections=1, max_sections=2),
-        Course(code="ECON 30523", name="Resource and Energy Economics", level=30000, min_sections=1, max_sections=2),
-        Course(code="ECON 30543", name="Environmental Economics and Policy", level=30000, min_sections=1, max_sections=2),
-        Course(code="ECON 30733", name="European Economic History II", level=30000, min_sections=1, max_sections=2, core_ht=True),
-        Course(code="ECON 30773", name="Public Choice", level=30000, min_sections=1, max_sections=2),
+        Course(code="ECON 30223", name="Intermediate Microeconomics", semester=semester, year=year, level=30000, min_sections=2, max_sections=3),
+        Course(code="ECON 31223", name="Intermediate Micro: Math Approach", semester=semester, year=year, level=30000, min_sections=1, max_sections=2),
+        Course(code="ECON 30233", name="Intermediate Macroeconomics", semester=semester, year=year, level=30000, min_sections=2, max_sections=3),
+        Course(code="ECON 31233", name="Intermediate Macro: Math Approach", semester=semester, year=year, level=30000, min_sections=1, max_sections=2),
+        Course(code="ECON 30243", name="Contending Perspectives in Economics", semester=semester, year=year, level=30000, min_sections=2, max_sections=3),
+        Course(code="ECON 30213", name="Development Theory", semester=semester, year=year, level=30000, min_sections=1, max_sections=2),
+        Course(code="ECON 30253", name="History of Economic Thought", semester=semester, year=year, level=30000, min_sections=1, max_sections=2, core_wem=True),
+        Course(code="ECON 30433", name="Development Studies", semester=semester, year=year, level=30000, min_sections=1, max_sections=2, core_ga=True),
+        Course(code="ECON 30443", name="Asian Economics", semester=semester, year=year, level=30000, min_sections=1, max_sections=2, core_wem=True),
+        Course(code="ECON 30473", name="Regional and Urban Economics", semester=semester, year=year, level=30000, min_sections=1, max_sections=2),
+        Course(code="ECON 30483", name="Financial History", semester=semester, year=year, level=30000, min_sections=1, max_sections=2, core_ht=True, core_wem=True),
+        Course(code="ECON 30503", name="Health Economics", semester=semester, year=year, level=30000, min_sections=1, max_sections=2),
+        Course(code="ECON 30523", name="Resource and Energy Economics", semester=semester, year=year, level=30000, min_sections=1, max_sections=2),
+        Course(code="ECON 30543", name="Environmental Economics and Policy", semester=semester, year=year, level=30000, min_sections=1, max_sections=2),
+        Course(code="ECON 30733", name="European Economic History II", semester=semester, year=year, level=30000, min_sections=1, max_sections=2, core_ht=True),
+        Course(code="ECON 30773", name="Public Choice", semester=semester, year=year, level=30000, min_sections=1, max_sections=2),
         
         # 40000 level courses
-        Course(code="ECON 40313", name="Econometrics", level=40000, min_sections=2, max_sections=3),
-        Course(code="ECON 40323", name="Time Series Econometrics", level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40123", name="Game Theory", level=40000, min_sections=1, max_sections=1),
-        Course(code="ECON 40143", name="Public Finance", level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40153", name="Economics of Financial Markets", level=40000, min_sections=1, max_sections=2, core_wem=True),
-        Course(code="ECON 40213", name="International Trade and Payments", level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40223", name="International Monetary Economics", level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40333", name="Machine Learning in Economics", level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40433", name="Law and Economics", level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40493", name="Macro Analysis and Communication", level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40513", name="Perspective in Internatl Econ", level=40000, min_sections=1, max_sections=2, core_ga=True),
+        Course(code="ECON 40313", name="Econometrics", semester=semester, year=year, level=40000, min_sections=2, max_sections=3),
+        Course(code="ECON 40323", name="Time Series Econometrics", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40123", name="Game Theory", semester=semester, year=year, level=40000, min_sections=1, max_sections=1),
+        Course(code="ECON 40143", name="Public Finance", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40153", name="Economics of Financial Markets", semester=semester, year=year, level=40000, min_sections=1, max_sections=2, core_wem=True),
+        Course(code="ECON 40213", name="International Trade and Payments", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40223", name="International Monetary Economics", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40333", name="Machine Learning in Economics", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40433", name="Law and Economics", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40493", name="Macro Analysis and Communication", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40513", name="Perspective in Internatl Econ", semester=semester, year=year, level=40000, min_sections=1, max_sections=2, core_ga=True),
         
         # 40970 Special Topics
-        Course(code="ECON 40970", name="Real Estate Principles", level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40970", name="Causal Inferences", level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40970", name="Growth", level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40970", name="Agriculture (Development)", level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40970", name="Scientific Computation", level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40970", name="International Financial Crises", level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40970", name="Big Data in Economics", level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40970", name="Global Health", level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40970", name="Real Estate Principles", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40970", name="Causal Inferences", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40970", name="Growth", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40970", name="Agriculture (Development)", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40970", name="Scientific Computation", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40970", name="International Financial Crises", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40970", name="Big Data in Economics", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
+        Course(code="ECON 40970", name="Global Health", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
     ]
+    semester = "Spring"
+    year = 2026
+    spring_courses = [
+        Course(code="ECON 10223", name="Intro Microeconomics", semester=semester, year=year, level=10000, credits=3, min_sections=16, max_sections=18, core_ssc=True),
+        Course(code="ECON 10233", name="Intro Macroeconomics", semester=semester, year=year, level=10000, credits=3, min_sections=10, max_sections=12, core_ssc=True),
+        Course(code="ECON 30003", name="Junior Honors Seminar", semester=semester, year=year, level=30000, credits=3, min_sections=1, max_sections=3),
+        Course(code="ECON 30223", name="Intermed Microeconomics", semester=semester, year=year, level=30000, credits=3, min_sections=1, max_sections=3),
+        Course(code="ECON 30233", name="Intermed Macroeconomics", semester=semester, year=year, level=30000, credits=3, min_sections=2, max_sections=4),
+        Course(code="ECON 30243", name="Contending Perspectives in Eco", semester=semester, year=year, level=30000, credits=3, min_sections=1, max_sections=3),
+        Course(code="ECON 30253", name="Hist of Econ Thought", semester=semester, year=year, level=30000, credits=3, min_sections=1, max_sections=2, core_wem=True),
+        Course(code="ECON 30433", name="Development Studies", semester=semester, year=year, level=30000, credits=3, min_sections=1, max_sections=2, core_ga=True),
+        Course(code="ECON 30443", name="Asian Economics", semester=semester, year=year, level=30000, credits=3, min_sections=1, max_sections=3, core_wem=True),
+        Course(code="ECON 30483", name="Financial History", semester=semester, year=year, level=30000, credits=3, min_sections=1, max_sections=3, core_ht=True, core_wem=True),
+        Course(code="ECON 30543", name="Environ Econ & Policy", semester=semester, year=year, level=30000, credits=3, min_sections=1, max_sections=2),
+        Course(code="ECON 30733", name="European Economic History II", semester=semester, year=year, level=30000, credits=3, min_sections=1, max_sections=2, core_ht=True),
+        Course(code="ECON 30773", name="Public Choice", semester=semester, year=year, level=30000, credits=3, min_sections=1, max_sections=3),
+        Course(code="ECON 31223", name="Inter Micro: Math Approach", semester=semester, year=year, level=30000, credits=3, min_sections=1, max_sections=2),
+        Course(code="ECON 40003", name="Senior Honors Resh Paper", semester=semester, year=year, level=40000, credits=3, min_sections=1, max_sections=3, core_wem=True),
+        Course(code="ECON 40143", name="Public Finance", semester=semester, year=year, level=40000, credits=3, min_sections=1, max_sections=2),
+        Course(code="ECON 40153", name="Eco Of Financial Markets", semester=semester, year=year, level=40000, credits=3, min_sections=1, max_sections=2, core_wem=True),
+        Course(code="ECON 40213", name="International Trade/Pmts", semester=semester, year=year, level=40000, credits=3, min_sections=1, max_sections=2),
+        Course(code="ECON 40313", name="Econometrics", semester=semester, year=year, level=40000, credits=3, min_sections=1, max_sections=3),
+        Course(code="ECON 40323", name="Time Series Econometrics", semester=semester, year=year, level=40000, credits=3, min_sections=1, max_sections=2),
+        Course(code="ECON 40513", name="Perspective in Internatl Econ", semester=semester, year=year, level=40000, credits=3, min_sections=1, max_sections=2, core_ga=True),
+        Course(code="ECON 40970", name="Experimental Course - Big Data in Economics", semester=semester, year=year, level=40000, credits=3, min_sections=1, max_sections=3),
+        Course(code="ECON 40990", name="Economics Internship", semester=semester, year=year, level=40000, credits=3, min_sections=1, max_sections=3),
+    ]
+    courses.extend(spring_courses)
     db.add_all(courses)
 
     print("Seeding time slots...")
@@ -163,8 +194,75 @@ def seed_db():
     db.add_all(constraints)
     db.commit()
 
+    print("Seeding preferences...")
+    # Get professors
+    graham = db.query(Professor).filter_by(name="Graham Gardner").first()
+    stepan = db.query(Professor).filter_by(name="Stepan Gordeev").first()
+    maxwell = db.query(Professor).filter_by(name="Maxwell Bullard").first()
+
+    if graham and stepan and maxwell:
+        # Add preferences
+        preferences = [
+            Preference(
+                professor_id=graham.id,
+                semester="Spring",
+                year=2026,
+                raw_email="I would like to teach Intro Microeconomics and Intermed Microeconomics. I prefer MWF mornings and avoid T R classes if possible. Please don't give me 8am.",
+                parsed_json={
+                    "preferred_courses": ["ECON 10223 | Intro Microeconomics", "ECON 30223 | Intermed Microeconomics"],
+                    "avoid_courses": [],
+                    "preferred_timeslots": ["MWF 9:00-9:50", "MWF 10:00-10:50", "MWF 11:00-11:50"],
+                    "avoid_timeslots": ["MWF 8:00-8:50"],
+                    "avoid_days": ["T", "R"],
+                    "max_load": 3,
+                    "wants_back_to_back": False,
+                    "on_leave": False
+                },
+                confidence=0.92,
+                admin_approved=True
+            ),
+            Preference(
+                professor_id=stepan.id,
+                semester="Spring",
+                year=2026,
+                raw_email="I'm open to teaching Macroeconomics and Econometrics. TR schedule is preferred. Thanks.",
+                parsed_json={
+                    "preferred_courses": ["ECON 10233 | Intro Macroeconomics", "ECON 40313 | Econometrics"],
+                    "avoid_courses": [],
+                    "preferred_timeslots": ["TR 9:30-10:50", "TR 11:00-12:20", "TR 12:30-13:50"],
+                    "avoid_timeslots": [],
+                    "avoid_days": ["M", "W", "F"],
+                    "max_load": 3,
+                    "wants_back_to_back": True,
+                    "on_leave": False
+                },
+                confidence=0.88,
+                admin_approved=False
+            ),
+            Preference(
+                professor_id=maxwell.id,
+                semester="Spring",
+                year=2026,
+                raw_email="I will be on sabbatical this spring.",
+                parsed_json={
+                    "preferred_courses": [],
+                    "avoid_courses": [],
+                    "preferred_timeslots": [],
+                    "avoid_timeslots": [],
+                    "avoid_days": [],
+                    "max_load": 0,
+                    "wants_back_to_back": None,
+                    "on_leave": True,
+                    "notes_for_admin": "Sabbatical"
+                },
+                confidence=0.95,
+                admin_approved=True
+            )
+        ]
+        db.add_all(preferences)
+        db.commit()
+
     # No schedule seeded for now to allow for blank slate
-    db.commit()
     db.close()
     print("Seed complete.")
 

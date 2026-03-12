@@ -25,16 +25,17 @@ class Professor(Base):
 
 class Course(Base):
     __tablename__ = "courses"
-    __table_args__ = (UniqueConstraint('code', 'name', name='uix_course_code_name'),)
+    __table_args__ = (UniqueConstraint('code', 'name', 'semester', 'year', name='uix_course_code_name_term'),)
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     code: Mapped[str] = mapped_column(index=True)  # e.g. ECON 10223, can have duplicates for special topics
     name: Mapped[str] = mapped_column()
+    semester: Mapped[str] = mapped_column(index=True)
+    year: Mapped[int] = mapped_column(index=True)
     credits: Mapped[int] = mapped_column(default=3)
     level: Mapped[int] = mapped_column()  # e.g., 10000, 30000, 40000
     min_sections: Mapped[int] = mapped_column(default=1)
     max_sections: Mapped[int] = mapped_column(default=5)
-    requires_lab: Mapped[bool] = mapped_column(default=False)
 
     # Core requirements satisfied by this course
     core_ssc: Mapped[bool] = mapped_column(default=False)
