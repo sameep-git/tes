@@ -5,9 +5,10 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, TrendingUp, AlertTriangle, CheckCircle2, Info, AlertOctagon } from 'lucide-react';
 import { fetchInsights, queryKeys, Course } from '@/lib/api';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { MultiSelect } from './ui/multi-select';
 
 interface InsightsTabProps {
@@ -25,6 +26,76 @@ export default function InsightsTab({ semester, year, courses, chatWidth = 450 }
     });
 
     const [selectedCourseKeys, setSelectedCourseKeys] = useState<string[]>([]);
+    const [selectedDays, setSelectedDays] = useState<string>('All');
+
+    // Extract unique day combinations from the timeslot data
+    const availableDays = useMemo(() => {
+        if (!data) return [];
+        const daysSet = new Set<string>();
+        data.timeslotData.forEach(ts => daysSet.add(ts.days));
+        return Array.from(daysSet).sort();
+    }, [data]);
+
+    // Reset filter when the data changes and the selected day pattern is no longer available
+    useEffect(() => {
+        if (selectedDays !== 'All' && availableDays.length > 0 && !availableDays.includes(selectedDays)) {
+            setSelectedDays('All');
+        }
+    }, [availableDays, selectedDays]);
+
+    const groupedTimeslotData = useMemo(() => {
+        if (!data?.timeslotData) return [];
+
+        // 1. Filter by selected days
+        const filteredData = selectedDays === 'All' 
+            ? data.timeslotData 
+            : data.timeslotData.filter(ts => ts.days === selectedDays);
+
+        // 2. Map and Sort
+        // If "All" is selected, we group by hour so the chart isn't overly crowded
+        // If a specific day combination is selected, we can show exact times (e.g. 9:00, 9:30)
+        if (selectedDays === 'All') {
+            const hourGroups = new Map<string, { label: string; preferred: number; avoided: number; sortKey: number }>();
+            
+            filteredData.forEach(ts => {
+                const hourStr = ts.startTime.split(':')[0];
+                const hourInt = parseInt(hourStr, 10);
+                
+                let label = "12 AM";
+                if (hourInt === 12) label = "12 PM";
+                else if (hourInt > 12) label = `${hourInt - 12} PM`;
+                else if (hourInt > 0) label = `${hourInt} AM`;
+
+                const existing = hourGroups.get(label);
+                if (existing) {
+                    existing.preferred += ts.preferred;
+                    existing.avoided += ts.avoided;
+                } else {
+                    hourGroups.set(label, { label, preferred: ts.preferred, avoided: ts.avoided, sortKey: hourInt });
+                }
+            });
+
+            return Array.from(hourGroups.values()).sort((a, b) => a.sortKey - b.sortKey);
+        } else {
+            // Specific Day selected -> Show exact times
+            return filteredData.map(ts => {
+                const hourStr = ts.startTime.split(':')[0];
+                const minStr = ts.startTime.split(':')[1] || '00';
+                const hourInt = parseInt(hourStr, 10);
+
+                const h12 = hourInt % 12 === 0 ? 12 : hourInt % 12;
+                const period = hourInt < 12 ? 'AM' : 'PM';
+                const timeLabel = `${h12}:${minStr} ${period}`;
+
+                return {
+                    label: timeLabel,
+                    preferred: ts.preferred,
+                    avoided: ts.avoided,
+                    sortKey: hourInt * 60 + parseInt(minStr, 10)
+                };
+            }).sort((a, b) => a.sortKey - b.sortKey);
+        }
+    }, [data, selectedDays]);
 
     const filteredCourseData = useMemo(() => {
         if (!data) return [];
@@ -148,14 +219,27 @@ export default function InsightsTab({ semester, year, courses, chatWidth = 450 }
             <div className={`grid gap-6 ${isCompact ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-5'}`}>
                 {/* Timeslot Heatmap */}
                 <Card className={isCompact ? "col-span-1" : "lg:col-span-3"}>
-                    <CardHeader>
-                        <CardTitle className="text-base">Demand Heatmap: Timeslots</CardTitle>
-                        <CardDescription>Comparison of preferred vs. avoided timeslots (sorted by time)</CardDescription>
+                    <CardHeader className="flex flex-row items-start justify-between pb-2">
+                        <div>
+                            <CardTitle className="text-base">Demand Heatmap</CardTitle>
+                            <CardDescription>Comparison of preferred vs. avoided start times</CardDescription>
+                        </div>
+                        <Select value={selectedDays} onValueChange={setSelectedDays}>
+                            <SelectTrigger className="w-[180px]">
+                                <SelectValue placeholder="Filter by Days" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="All">All Days</SelectItem>
+                                {availableDays.map(day => (
+                                    <SelectItem key={day} value={day}>{day} Only</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
                     </CardHeader>
                     <CardContent>
                         <div className="h-[350px] w-full">
                             <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={data!.timeslotData} margin={{ top: 20, right: 30, left: 0, bottom: 60 }} barCategoryGap="20%">
+                                <BarChart data={groupedTimeslotData} margin={{ top: 20, right: 30, left: 0, bottom: 60 }} barCategoryGap="20%">
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                                     <XAxis
                                         dataKey="label"
