@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, TrendingUp, AlertTriangle, CheckCircle2, Info, AlertOctagon } from 'lucide-react';
 import { fetchInsights, queryKeys, Course } from '@/lib/api';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { MultiSelect } from './ui/multi-select';
 
 interface InsightsTabProps {
@@ -35,6 +35,13 @@ export default function InsightsTab({ semester, year, courses, chatWidth = 450 }
         data.timeslotData.forEach(ts => daysSet.add(ts.days));
         return Array.from(daysSet).sort();
     }, [data]);
+
+    // Reset filter when the data changes and the selected day pattern is no longer available
+    useEffect(() => {
+        if (selectedDays !== 'All' && availableDays.length > 0 && !availableDays.includes(selectedDays)) {
+            setSelectedDays('All');
+        }
+    }, [availableDays, selectedDays]);
 
     const groupedTimeslotData = useMemo(() => {
         if (!data?.timeslotData) return [];
@@ -75,10 +82,10 @@ export default function InsightsTab({ semester, year, courses, chatWidth = 450 }
                 const hourStr = ts.startTime.split(':')[0];
                 const minStr = ts.startTime.split(':')[1] || '00';
                 const hourInt = parseInt(hourStr, 10);
-                
-                let timeLabel = `${hourInt}:${minStr} AM`;
-                if (hourInt === 12) timeLabel = `12:${minStr} PM`;
-                else if (hourInt > 12) timeLabel = `${hourInt - 12}:${minStr} PM`;
+
+                const h12 = hourInt % 12 === 0 ? 12 : hourInt % 12;
+                const period = hourInt < 12 ? 'AM' : 'PM';
+                const timeLabel = `${h12}:${minStr} ${period}`;
 
                 return {
                     label: timeLabel,
