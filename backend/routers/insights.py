@@ -20,10 +20,12 @@ class InsightSummary(BaseModel):
     readiness: Dict[str, int]
 
 class TimeslotInsight(BaseModel):
-    label: str  # e.g. "9 AM"
+    id: int
+    label: str  # e.g. "MWF 9:00-9:50"
+    days: str   # e.g. "MWF"
+    startTime: str # e.g. "09:00"
     preferred: int
     avoided: int
-    sortKey: int # e.g. 9
 
 class CourseInsight(BaseModel):
     code: str
@@ -35,27 +37,6 @@ class InsightsResponse(BaseModel):
     summary: InsightSummary
     timeslotData: List[TimeslotInsight]
     courseData: List[CourseInsight]
-
-def format_hour_label(hour: int) -> str:
-    """Convert hour integer to label like '9 AM' or '12 PM'"""
-    if hour == 0:
-        return "12 AM"
-    if hour == 12:
-        return "12 PM"
-    suffix = "AM" if hour < 12 else "PM"
-    display_hour = hour if hour <= 12 else hour - 12
-    return f"{display_hour} {suffix}"
-
-def get_hour_bucket(start_time_str: str) -> tuple[str, int]:
-    """Convert '09:30' to ('9 AM', 9)"""
-    try:
-        if not start_time_str or ':' not in start_time_str:
-            raise ValueError(f"Invalid time format: {start_time_str}")
-        hour = int(start_time_str.split(':')[0])
-        return format_hour_label(hour), hour
-    except (ValueError, IndexError, AttributeError) as e:
-        logger.error(f"Error parsing time bucket for '{start_time_str}': {e}")
-        return "Unknown", 99
 
 @router.get("/", response_model=InsightsResponse)
 def get_insights(
@@ -93,7 +74,7 @@ def get_insights(
     course_pref_counter = Counter()
     course_avoid_counter = Counter()
     
-    # Use hour integer (e.g., 9) as the key for timeslots
+    # Use full timeslot label as the key for timeslots
     ts_pref_counter = Counter()
     ts_avoid_counter = Counter()
     
@@ -109,20 +90,14 @@ def get_insights(
         for c in data.get("avoid_courses", []):
             course_avoid_counter[c] += 1
             
-        # Timeslots - Aggregate by hour bucket
+        # Timeslots - Aggregate by full object label
         for ts_label in data.get("preferred_timeslots", []):
-            ts_obj = all_timeslots.get(ts_label)
-            if ts_obj:
-                _, hour = get_hour_bucket(ts_obj.start_time)
-                if hour != 99:
-                    ts_pref_counter[hour] += 1
+            if ts_label in all_timeslots:
+                ts_pref_counter[ts_label] += 1
             
         for ts_label in data.get("avoid_timeslots", []):
-            ts_obj = all_timeslots.get(ts_label)
-            if ts_obj:
-                _, hour = get_hour_bucket(ts_obj.start_time)
-                if hour != 99:
-                    ts_avoid_counter[hour] += 1
+            if ts_label in all_timeslots:
+                ts_avoid_counter[ts_label] += 1
 
     # Fetch all courses to build a canonical map
     all_courses = db.query(models.Course).all()
@@ -164,27 +139,26 @@ def get_insights(
     # Sort courses deterministically: preferred desc, then code, then name
     course_insights.sort(key=lambda x: (-x.preferred, x.code, x.name))
     
-    # Build Timeslot Data by Hour
+    # Build Timeslot Data by exact timeslots
     ts_insights = []
-    all_seen_hours = set(ts_pref_counter.keys()) | set(ts_avoid_counter.keys())
     
-    # Also include hours that exist in active timeslots even if 0 demand
-    for ts in all_timeslots.values():
+    # Include all active timeslots even if 0 demand to ensure they show up on charts
+    for ts_label, ts in all_timeslots.items():
         if ts.active:
-            _, hour = get_hour_bucket(ts.start_time)
-            all_seen_hours.add(hour)
-
-    for hour in all_seen_hours:
-        if hour == 99: continue # Skip unknowns
-        
-        ts_insights.append(TimeslotInsight(
-            label=format_hour_label(hour),
-            preferred=ts_pref_counter.get(hour, 0),
-            avoided=ts_avoid_counter.get(hour, 0),
-            sortKey=hour
-        ))
-        
-    ts_insights.sort(key=lambda x: x.sortKey)
+            ts_insights.append(TimeslotInsight(
+                id=ts.id,
+                label=ts.label,
+                days=ts.days,
+                startTime=ts.start_time,
+                preferred=ts_pref_counter.get(ts_label, 0),
+                avoided=ts_avoid_counter.get(ts_label, 0)
+            ))
+            
+    # Sort timeslots sequentially by days, then start_time
+    # E.g. M, T, W, R, F, MW, TR, MWF
+    # To keep simple for now, sort primarily by startTime so heatmap flows chronologically 
+    # and let the frontend do day-sorting if grouped by days.
+    ts_insights.sort(key=lambda x: (x.startTime, x.days))
     
     # Summary Highlights
     hot_course = None
@@ -202,13 +176,13 @@ def get_insights(
         
     peak_time = None
     if ts_pref_counter:
-        top_hour, top_count = ts_pref_counter.most_common(1)[0]
-        peak_time = {"label": format_hour_label(top_hour), "count": top_count}
+        top_label, top_count = ts_pref_counter.most_common(1)[0]
+        peak_time = {"label": top_label, "count": top_count}
         
     avoided_time = None
     if ts_avoid_counter:
-        top_hour, top_count = ts_avoid_counter.most_common(1)[0]
-        avoided_time = {"label": format_hour_label(top_hour), "count": top_count}
+        top_label, top_count = ts_avoid_counter.most_common(1)[0]
+        avoided_time = {"label": top_label, "count": top_count}
 
     return InsightsResponse(
         summary=InsightSummary(

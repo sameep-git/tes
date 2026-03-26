@@ -83,10 +83,12 @@ export interface InsightsResponse {
         readiness: { approved: number; total: number };
     };
     timeslotData: Array<{
+        id: number;
         label: string;
+        days: string;
+        startTime: string;
         preferred: number;
         avoided: number;
-        sortKey: number;
     }>;
     courseData: Array<{
         code: string;

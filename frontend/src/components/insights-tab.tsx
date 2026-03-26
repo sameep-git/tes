@@ -5,6 +5,7 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2, TrendingUp, AlertTriangle, CheckCircle2, Info, AlertOctagon } from 'lucide-react';
 import { fetchInsights, queryKeys, Course } from '@/lib/api';
 import { useState, useMemo } from 'react';
@@ -25,6 +26,63 @@ export default function InsightsTab({ semester, year, courses, chatWidth = 450 }
     });
 
     const [selectedCourseKeys, setSelectedCourseKeys] = useState<string[]>([]);
+    const [timeslotView, setTimeslotView] = useState<'time' | 'day'>('time');
+
+    const groupedTimeslotData = useMemo(() => {
+        if (!data?.timeslotData) return [];
+
+        if (timeslotView === 'time') {
+            // Group by start hour
+            const hourGroups = new Map<string, { label: string; preferred: number; avoided: number; sortKey: number }>();
+            
+            data.timeslotData.forEach(ts => {
+                const hourStr = ts.startTime.split(':')[0];
+                const hourInt = parseInt(hourStr, 10);
+                
+                let label = "12 AM";
+                if (hourInt === 12) label = "12 PM";
+                else if (hourInt > 12) label = `${hourInt - 12} PM`;
+                else if (hourInt > 0) label = `${hourInt} AM`;
+
+                const existing = hourGroups.get(label);
+                if (existing) {
+                    existing.preferred += ts.preferred;
+                    existing.avoided += ts.avoided;
+                } else {
+                    hourGroups.set(label, { label, preferred: ts.preferred, avoided: ts.avoided, sortKey: hourInt });
+                }
+            });
+
+            return Array.from(hourGroups.values()).sort((a, b) => a.sortKey - b.sortKey);
+        } else {
+            // Group by day combinations
+            const dayGroups = new Map<string, { label: string; preferred: number; avoided: number; sortKey: number }>();
+            
+            // Define a sort order for common day combos
+            const dayOrder: Record<string, number> = { 'M': 1, 'T': 2, 'W': 3, 'R': 4, 'F': 5, 'MW': 6, 'TR': 7, 'MWF': 8 };
+
+            data.timeslotData.forEach(ts => {
+                const label = ts.days;
+                const existing = dayGroups.get(label);
+                if (existing) {
+                    existing.preferred += ts.preferred;
+                    existing.avoided += ts.avoided;
+                } else {
+                    dayGroups.set(label, { 
+                        label, 
+                        preferred: ts.preferred, 
+                        avoided: ts.avoided, 
+                        sortKey: dayOrder[label] || 99 
+                    });
+                }
+            });
+
+            return Array.from(dayGroups.values()).sort((a, b) => {
+                if (a.sortKey !== b.sortKey) return a.sortKey - b.sortKey;
+                return a.label.localeCompare(b.label);
+            });
+        }
+    }, [data, timeslotView]);
 
     const filteredCourseData = useMemo(() => {
         if (!data) return [];
@@ -148,14 +206,22 @@ export default function InsightsTab({ semester, year, courses, chatWidth = 450 }
             <div className={`grid gap-6 ${isCompact ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-5'}`}>
                 {/* Timeslot Heatmap */}
                 <Card className={isCompact ? "col-span-1" : "lg:col-span-3"}>
-                    <CardHeader>
-                        <CardTitle className="text-base">Demand Heatmap: Timeslots</CardTitle>
-                        <CardDescription>Comparison of preferred vs. avoided timeslots (sorted by time)</CardDescription>
+                    <CardHeader className="flex flex-row items-start justify-between pb-2">
+                        <div>
+                            <CardTitle className="text-base">Demand Heatmap</CardTitle>
+                            <CardDescription>Comparison of preferred vs. avoided times</CardDescription>
+                        </div>
+                        <Tabs defaultValue="time" value={timeslotView} onValueChange={(v) => setTimeslotView(v as 'time' | 'day')} className="w-[200px]">
+                            <TabsList className="grid w-full grid-cols-2">
+                                <TabsTrigger value="time">By Time</TabsTrigger>
+                                <TabsTrigger value="day">By Day</TabsTrigger>
+                            </TabsList>
+                        </Tabs>
                     </CardHeader>
                     <CardContent>
                         <div className="h-[350px] w-full">
                             <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={data!.timeslotData} margin={{ top: 20, right: 30, left: 0, bottom: 60 }} barCategoryGap="20%">
+                                <BarChart data={groupedTimeslotData} margin={{ top: 20, right: 30, left: 0, bottom: 60 }} barCategoryGap="20%">
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                                     <XAxis
                                         dataKey="label"
