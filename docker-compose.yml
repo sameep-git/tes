@@ -8,6 +8,8 @@ services:
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - DATABASE_URL=sqlite:////data/scheduler.db
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
+      - TES_ADMIN_TOKEN=${TES_ADMIN_TOKEN}
     volumes:
       - db_data:/data
       - ./credentials.json:/app/credentials.json:ro

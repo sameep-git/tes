@@ -140,25 +140,25 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
     return res.json() as Promise<T>;
 }
 
-export const fetchProfessors = (): Promise<Professor[]> => fetch(`${API}/professors`).then(r => jsonOrThrow<Professor[]>(r));
+export const fetchProfessors = (): Promise<Professor[]> => fetch(`${API}/professors/`).then(r => jsonOrThrow<Professor[]>(r));
 export const fetchCourses = (semester?: string, year?: number): Promise<Course[]> => {
     const params = new URLSearchParams();
     if (semester) params.append('semester', semester);
     if (year !== undefined && year !== null) params.append('year', year.toString());
     const query = params.toString() ? `?${params.toString()}` : '';
-    return fetch(`${API}/courses${query}`).then(r => jsonOrThrow<Course[]>(r));
+    return fetch(`${API}/courses/${query}`).then(r => jsonOrThrow<Course[]>(r));
 };
-export const fetchTimeslots = (): Promise<TimeSlot[]> => fetch(`${API}/timeslots`).then(r => jsonOrThrow<TimeSlot[]>(r));
-export const fetchRooms = (): Promise<Room[]> => fetch(`${API}/rooms`).then(r => jsonOrThrow<Room[]>(r));
+export const fetchTimeslots = (): Promise<TimeSlot[]> => fetch(`${API}/timeslots/`).then(r => jsonOrThrow<TimeSlot[]>(r));
+export const fetchRooms = (): Promise<Room[]> => fetch(`${API}/rooms/`).then(r => jsonOrThrow<Room[]>(r));
 
 export const fetchSchedules = (semester: string, year: number): Promise<Schedule[]> =>
-    fetch(`${API}/schedules?semester=${encodeURIComponent(semester)}&year=${year}`).then(r => jsonOrThrow<Schedule[]>(r));
+    fetch(`${API}/schedules/?semester=${encodeURIComponent(semester)}&year=${year}`).then(r => jsonOrThrow<Schedule[]>(r));
 
 export const fetchPreferences = (semester: string, year: number): Promise<Preference[]> =>
-    fetch(`${API}/preferences?semester=${encodeURIComponent(semester)}&year=${year}`).then(r => jsonOrThrow<Preference[]>(r));
+    fetch(`${API}/preferences/?semester=${encodeURIComponent(semester)}&year=${year}`).then(r => jsonOrThrow<Preference[]>(r));
 
 export const fetchInsights = (semester: string, year: number): Promise<InsightsResponse> =>
-    fetch(`${API}/insights?semester=${encodeURIComponent(semester)}&year=${year}`).then(r => jsonOrThrow<InsightsResponse>(r));
+    fetch(`${API}/insights/?semester=${encodeURIComponent(semester)}&year=${year}`).then(r => jsonOrThrow<InsightsResponse>(r));
 
 export const fetchCourseHistory = (courseId: number, semester?: string, year?: number): Promise<Section[]> => {
     let url = `${API}/courses/${courseId}/history`;
@@ -177,7 +177,7 @@ export const fetchCourseHistory = (courseId: number, semester?: string, year?: n
 // ---------------------------------------------------------------------------
 
 export async function approvePreference(prefId: number): Promise<Preference> {
-    const res = await fetch(`${API}/preferences/${prefId}/approve`, { method: 'PUT' });
+    const res = await fetch(`${API}/preferences/${prefId}/approve/`, { method: 'PUT' });
     return jsonOrThrow<Preference>(res);
 }
 
@@ -185,7 +185,7 @@ export async function updatePreferenceParsedJson(
     prefId: number,
     parsedJson: Record<string, unknown>,
 ): Promise<Preference> {
-    const res = await fetch(`${API}/preferences/${prefId}`, {
+    const res = await fetch(`${API}/preferences/${prefId}/`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ parsed_json: parsedJson }),
