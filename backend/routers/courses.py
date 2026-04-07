@@ -18,11 +18,48 @@ def get_courses(
     db: Session = Depends(get_db)
 ):
     query = db.query(models.Course)
-    if semester is not None:
-        query = query.filter(func.lower(models.Course.semester) == semester.lower())
-    if year is not None:
-        query = query.filter(models.Course.year == year)
+    
+    if semester is not None and year is not None:
+        exact_match_query = query.filter(
+            func.lower(models.Course.semester) == semester.lower(),
+            models.Course.year == year
+        )
+        exact_matches = exact_match_query.offset(skip).limit(limit).all()
         
+        if len(exact_matches) > 0:
+            return exact_matches
+            
+        # AUTO-CLONE LOGIC: if requested semester has no specific courses cloned yet,
+        # we will fetch all CourseTemplates and clone them into the Course table.
+        templates = db.query(models.CourseTemplate).all()
+        if templates:
+            new_courses = []
+            for t in templates:
+                new_course = models.Course(
+                    template_id=t.id,
+                    code=t.code,
+                    name=t.name,
+                    semester=semester.capitalize(),
+                    year=year,
+                    credits=t.credits,
+                    level=t.level,
+                    min_sections=t.default_min_sections,
+                    max_sections=t.default_max_sections,
+                    capacity=t.default_capacity,
+                    core_ssc=t.core_ssc,
+                    core_ht=t.core_ht,
+                    core_ga=t.core_ga,
+                    core_wem=t.core_wem
+                )
+                new_courses.append(new_course)
+            
+            db.add_all(new_courses)
+            db.commit()
+            
+            # Re-fetch after commit to ensure IDs and relationships are populated
+            return exact_match_query.offset(skip).limit(limit).all()
+
+    # If no specific filter (or no templates to clone), just return them
     courses = query.offset(skip).limit(limit).all()
     return courses
 

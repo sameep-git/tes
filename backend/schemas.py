@@ -3,11 +3,13 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 class ProfessorBase(BaseModel):
+    tcu_id: Optional[str] = None
     name: str
     email: EmailStr
     office: Optional[str] = None
     rank: str
-    max_sections: int = 3
+    fall_count: int = 3
+    spring_count: int = 3
     active: bool = True
 
 class ProfessorCreate(ProfessorBase):
@@ -19,7 +21,27 @@ class ProfessorResponse(ProfessorBase):
     class Config:
         from_attributes = True
 
+class CourseTemplateBase(BaseModel):
+    code: str
+    name: str
+    credits: int = 3
+    level: int
+    default_min_sections: int = 1
+    default_max_sections: int = 5
+    default_capacity: int = 45
+    core_ssc: bool = False
+    core_ht: bool = False
+    core_ga: bool = False
+    core_wem: bool = False
+
+class CourseTemplateResponse(CourseTemplateBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
 class CourseBase(BaseModel):
+    template_id: Optional[int] = None
     code: str
     name: str
     semester: str
@@ -28,6 +50,7 @@ class CourseBase(BaseModel):
     level: int
     min_sections: int = 1
     max_sections: int = 5
+    capacity: int = 45
     core_ssc: bool = False
     core_ht: bool = False
     core_ga: bool = False
@@ -54,6 +77,16 @@ class TimeSlotResponse(TimeSlotBase):
     class Config:
         from_attributes = True
 
+class RoomBase(BaseModel):
+    building: str
+    room_number: str
+    capacity: int
+
+class RoomResponse(RoomBase):
+    id: int
+
+    class Config:
+        from_attributes = True
 
 class ProfessorBrief(BaseModel):
     id: int
@@ -85,11 +118,14 @@ class SectionResponse(BaseModel):
     course_id: int
     professor_id: Optional[int] = None
     timeslot_id: Optional[int] = None
+    room_id: Optional[int] = None
     status: str
     course_code: Optional[str] = None
     course_name: Optional[str] = None
     professor_name: Optional[str] = None
     timeslot_label: Optional[str] = None
+    room_building: Optional[str] = None
+    room_number: Optional[str] = None
     days: Optional[str] = None
     start_time: Optional[str] = None
     end_time: Optional[str] = None
@@ -106,11 +142,14 @@ class SectionResponse(BaseModel):
             course_id=section.course_id,
             professor_id=section.professor_id,
             timeslot_id=section.timeslot_id,
+            room_id=section.room_id,
             status=section.status,
             course_code=section.course.code if section.course else None,
             course_name=section.course.name if section.course else None,
             professor_name=section.professor.name if section.professor else None,
             timeslot_label=section.timeslot.label if section.timeslot else None,
+            room_building=section.room.building if section.room else None,
+            room_number=section.room.room_number if section.room else None,
             days=section.timeslot.days if section.timeslot else None,
             start_time=section.timeslot.start_time if section.timeslot else None,
             end_time=section.timeslot.end_time if section.timeslot else None,

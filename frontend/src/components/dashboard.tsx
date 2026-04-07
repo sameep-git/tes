@@ -27,12 +27,14 @@ import {
   fetchSchedules,
   fetchPreferences,
   fetchTimeslots,
+  fetchRooms,
   approvePreference,
   updatePreferenceParsedJson,
   type Professor,
   type Course,
   type Schedule,
   type TimeSlot,
+  type Room,
   type Preference,
 } from '@/lib/api';
 
@@ -391,6 +393,7 @@ export default function Dashboard() {
     queryFn: () => fetchCourses(semester, year) 
   });
   const { data: timeslots = [] } = useQuery({ queryKey: queryKeys.timeslots, queryFn: fetchTimeslots });
+  const { data: rooms = [], isLoading: roomsLoading } = useQuery({ queryKey: queryKeys.rooms, queryFn: fetchRooms });
   const { data: schedules = [], isLoading: schedsLoading } = useQuery({
     queryKey: queryKeys.schedules(semester, year),
     queryFn: () => fetchSchedules(semester, year),
@@ -533,6 +536,7 @@ export default function Dashboard() {
               </TabsTrigger>
               <TabsTrigger value="professors">Professors</TabsTrigger>
               <TabsTrigger value="courses">Courses</TabsTrigger>
+              <TabsTrigger value="rooms">Rooms</TabsTrigger>
               <TabsTrigger value="schedules">Schedules</TabsTrigger>
               <TabsTrigger value="insights">
                 <TrendingUp className="w-3.5 h-3.5 mr-1.5" />
@@ -647,29 +651,34 @@ export default function Dashboard() {
                             <TableHead>Email</TableHead>
                             <TableHead>Office</TableHead>
                             <TableHead>Rank</TableHead>
-                            <TableHead>Max Sections</TableHead>
+                            <TableHead>Fall/Spring</TableHead>
                             <TableHead>Status</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {professors.map(prof => (
                             <TableRow key={prof.id}>
-                              <TableCell className="font-medium">{prof.name}</TableCell>
+                              <TableCell className="font-medium">
+                                <div className="flex flex-col">
+                                  <span>{prof.name}</span>
+                                  {prof.tcu_id && <span className="text-xs text-gray-400">ID: {prof.tcu_id}</span>}
+                                </div>
+                              </TableCell>
                               <TableCell className="text-gray-500">{prof.email}</TableCell>
                               <TableCell>{prof.office ?? '—'}</TableCell>
                               <TableCell>
                                 <Badge variant="outline" className={
                                   prof.rank.includes('Visiting') ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                                    prof.rank.includes('Assistant Professor') ? 'bg-violet-50 text-violet-700 border-violet-200' :
-                                      prof.rank.includes('Associate Professor') ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
-                                        prof.rank.includes('Professor') ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                    prof.rank.includes('Assistant') ? 'bg-violet-50 text-violet-700 border-violet-200' :
+                                      prof.rank.includes('Associate') ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                                        prof.rank.includes('Full') ? 'bg-blue-50 text-blue-700 border-blue-200' :
                                           prof.rank.includes('Instructor') ? 'bg-amber-50 text-amber-700 border-amber-200' :
                                             'bg-gray-50 text-gray-700 border-gray-200'
                                 }>
                                   {prof.rank}
                                 </Badge>
                               </TableCell>
-                              <TableCell>{prof.max_sections}</TableCell>
+                              <TableCell>{prof.fall_count} / {prof.spring_count}</TableCell>
                               <TableCell>
                                 <Badge variant="outline" className={
                                   prof.active ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-100 text-gray-500 border-gray-200'
@@ -760,6 +769,42 @@ export default function Dashboard() {
               </Card>
             </TabsContent>
 
+            {/* ========== Rooms Tab ========== */}
+            <TabsContent value="rooms" className="flex-1 mt-0">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Room Inventory</CardTitle>
+                  <CardDescription>{rooms.length} rooms available for scheduling</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {roomsLoading ? (
+                    <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+                  ) : (
+                    <div className="border rounded-md">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Building</TableHead>
+                            <TableHead>Room Number</TableHead>
+                            <TableHead>Capacity</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {rooms.map(room => (
+                            <TableRow key={room.id}>
+                              <TableCell className="font-medium">{room.building}</TableCell>
+                              <TableCell>{room.room_number}</TableCell>
+                              <TableCell>{room.capacity}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
             {/* ========== Insights Tab ========== */}
             <TabsContent value="insights" className="flex-1 mt-0">
               <InsightsTab semester={semester} year={year} courses={courses} chatWidth={chatWidth} />
@@ -832,10 +877,11 @@ export default function Dashboard() {
                           {sched.sections.length > 0 && (
                             <Table>
                               <TableHeader>
-                                <TableRow>
+                                  <TableRow>
                                   <TableHead>Course</TableHead>
                                   <TableHead>Professor</TableHead>
                                   <TableHead>Time Slot</TableHead>
+                                  <TableHead>Room</TableHead>
                                   <TableHead>Status</TableHead>
                                 </TableRow>
                               </TableHeader>
@@ -845,6 +891,15 @@ export default function Dashboard() {
                                     <TableCell className="font-medium">{sec.course_code} — {sec.course_name}</TableCell>
                                     <TableCell>{sec.professor_name ?? <span className="text-gray-300">Unassigned</span>}</TableCell>
                                     <TableCell>{sec.timeslot_label ?? <span className="text-gray-300">TBD</span>}</TableCell>
+                                    <TableCell>
+                                      {sec.room_building ? (
+                                        <Badge variant="outline" className="text-xs bg-slate-50">
+                                          {sec.room_building} {sec.room_number}
+                                        </Badge>
+                                      ) : (
+                                        <span className="text-gray-300">TBD</span>
+                                      )}
+                                    </TableCell>
                                     <TableCell>
                                       <Badge variant="outline" className="text-xs">{sec.status}</Badge>
                                     </TableCell>

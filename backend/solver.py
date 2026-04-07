@@ -5,12 +5,12 @@ from typing import Dict, Any
 from ortools.sat.python import cp_model
 
 from .database import SessionLocal
-from .models import Professor, Course, TimeSlot, Schedule, Section, Preference
+from .models import Professor, Course, TimeSlot, Schedule, Section, Preference, Room
 
 
 def run_solver(semester: str, year: int) -> Dict[str, Any]:
     """
-    Executes the OR-Tools CP-SAT solver to assign professors to courses and timeslots.
+    Executes the OR-Tools CP-SAT solver to assign professors to courses, timeslots, and rooms.
     """
     db = SessionLocal()
 
@@ -19,6 +19,7 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
         professors = db.query(Professor).filter(Professor.active == True).all()
         courses = db.query(Course).filter(Course.semester == semester, Course.year == year).all()
         timeslots = db.query(TimeSlot).filter(TimeSlot.active == True).all()
+        rooms = db.query(Room).all()
 
         preferences = {}
         for p in professors:
@@ -32,8 +33,8 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
             else:
                 preferences[p.id] = {}
 
-        if not professors or not courses or not timeslots:
-            return {"status": "error", "message": "Missing basic data (professors, courses, or timeslots)."}
+        if not professors or not courses or not timeslots or not rooms:
+            return {"status": "error", "message": "Missing basic data (professors, courses, timeslots, or rooms)."}
 
         # 2. Initialize Model
         model = cp_model.CpModel()
@@ -43,27 +44,47 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
         for p in professors:
             for c in courses:
                 for t in timeslots:
-                    assign[(p.id, c.id, t.id)] = model.NewBoolVar(f"assign_p{p.id}_c{c.id}_t{t.id}")
+                    for r in rooms:
+                        assign[(p.id, c.id, t.id, r.id)] = model.NewBoolVar(f"assign_p{p.id}_c{c.id}_t{t.id}_r{r.id}")
 
         assumptions_map = {}
 
         # 4. HARD CONSTRAINTS
         
         # A. A professor cannot teach more than one course at the exact same time
-        # We use a single global assumption for this since it's a universal law of physics.
         b_physics = model.NewBoolVar("assump_A_physics")
         for p in professors:
             for t in timeslots:
-                model.AddAtMostOne(assign[(p.id, c.id, t.id)] for c in courses).OnlyEnforceIf(b_physics)
+                model.AddAtMostOne(assign[(p.id, c.id, t.id, r.id)] for c in courses for r in rooms).OnlyEnforceIf(b_physics)
         model.AddAssumption(b_physics)
         assumptions_map[b_physics.Index()] = "A professor cannot teach multiple courses at the exact same time."
+
+        # A2. A room cannot have more than one course at the exact same time
+        b_room_double = model.NewBoolVar("assump_A2_room_double")
+        for r in rooms:
+            for t in timeslots:
+                model.AddAtMostOne(assign[(p.id, c.id, t.id, r.id)] for c in courses for p in professors).OnlyEnforceIf(b_room_double)
+        model.AddAssumption(b_room_double)
+        assumptions_map[b_room_double.Index()] = "A room cannot be double-booked at the exact same time."
+
+        # A3. Room capacity must meet or exceed course capacity
+        b_room_cap = model.NewBoolVar("assump_A3_room_cap")
+        for p in professors:
+            for c in courses:
+                for t in timeslots:
+                    for r in rooms:
+                        if c.capacity > r.capacity:
+                            model.Add(assign[(p.id, c.id, t.id, r.id)] == 0).OnlyEnforceIf(b_room_cap)
+        model.AddAssumption(b_room_cap)
+        assumptions_map[b_room_cap.Index()] = "A course must be scheduled in a room with adequate capacity."
 
         # B. Minimum/Maximum Course Sections
         for c in courses:
             total_sections = []
             for p in professors:
                 for t in timeslots:
-                    total_sections.append(assign[(p.id, c.id, t.id)])
+                    for r in rooms:
+                        total_sections.append(assign[(p.id, c.id, t.id, r.id)])
             
             b_min = model.NewBoolVar(f"assump_B_min_c{c.id}")
             model.Add(sum(total_sections) >= c.min_sections).OnlyEnforceIf(b_min)
@@ -83,7 +104,8 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
             total_classes = []
             for c in courses:
                 for t in timeslots:
-                    total_classes.append(assign[(p.id, c.id, t.id)])
+                    for r in rooms:
+                        total_classes.append(assign[(p.id, c.id, t.id, r.id)])
 
             if on_leave:
                 b = model.NewBoolVar(f"assump_C_leave_p{p.id}")
@@ -91,7 +113,7 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
                 model.AddAssumption(b)
                 assumptions_map[b.Index()] = f"Professor {p.name} is on leave and must teach 0 sections."
             else:
-                db_limit = p.max_sections
+                db_limit = p.fall_count if semester.lower() == "fall" else p.spring_count
                 email_limit = pref.get("max_load")
                 limit = min(db_limit, email_limit) if email_limit is not None else db_limit
                     
@@ -109,11 +131,12 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
         for c in courses:
             for p in professors:
                 for t in timeslots:
-                    var = assign[(p.id, c.id, t.id)]
-                    if c.core_ssc: ssc_sections.append(var)
-                    if c.core_ht: ht_sections.append(var)
-                    if c.core_ga: ga_sections.append(var)
-                    if c.core_wem: wem_sections.append(var)
+                    for r in rooms:
+                        var = assign[(p.id, c.id, t.id, r.id)]
+                        if c.core_ssc: ssc_sections.append(var)
+                        if c.core_ht: ht_sections.append(var)
+                        if c.core_ga: ga_sections.append(var)
+                        if c.core_wem: wem_sections.append(var)
         
         if ssc_sections: 
             b = model.NewBoolVar("assump_D_ssc")
@@ -140,9 +163,8 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
             assumptions_map[b.Index()] = "At least one Written Expression (WEM) core course must be scheduled."
 
         # E. Timeslot Capacity
-        # We can also group this globally if it causes spam, but individual room limits might be nice to know.
         for t in timeslots:
-            classes_in_slot = [assign[(p.id, c.id, t.id)] for p in professors for c in courses]
+            classes_in_slot = [assign[(p.id, c.id, t.id, r.id)] for p in professors for c in courses for r in rooms]
             b = model.NewBoolVar(f"assump_E_cap_t{t.id}")
             model.Add(sum(classes_in_slot) <= t.max_classes).OnlyEnforceIf(b)
             model.AddAssumption(b)
@@ -161,10 +183,10 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
 
             prime_slots = [t for t in timeslots if pt_start <= t.start_time < pt_end]
             if prime_slots:
-                prime_vars = [assign[(p.id, c.id, t.id)]
-                              for p in professors for c in courses for t in prime_slots]
-                all_vars = [assign[(p.id, c.id, t.id)]
-                            for p in professors for c in courses for t in timeslots]
+                prime_vars = [assign[(p.id, c.id, t.id, r.id)]
+                              for p in professors for c in courses for t in prime_slots for r in rooms]
+                all_vars = [assign[(p.id, c.id, t.id, r.id)]
+                            for p in professors for c in courses for t in timeslots for r in rooms]
                 
                 b = model.NewBoolVar("assump_F_prime")
                 model.Add(sum(prime_vars) * 100 <= max_pct * sum(all_vars)).OnlyEnforceIf(b)
@@ -182,7 +204,8 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
                     b = model.NewBoolVar(f"assump_G_blk_t{t.id}")
                     for p in professors:
                         for c in courses:
-                            model.Add(assign[(p.id, c.id, t.id)] == 0).OnlyEnforceIf(b)
+                            for r in rooms:
+                                model.Add(assign[(p.id, c.id, t.id, r.id)] == 0).OnlyEnforceIf(b)
                     model.AddAssumption(b)
                     assumptions_map[b.Index()] = f"Timeslot {t.label} is marked as blocked by administration."
 
@@ -202,21 +225,22 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
             for c in courses:
                 course_key = f"{c.code} | {c.name}"
                 for t in timeslots:
-                    var = assign[(p.id, c.id, t.id)]
+                    for r in rooms:
+                        var = assign[(p.id, c.id, t.id, r.id)]
 
-                    if c.code in preferred_courses or course_key in preferred_courses:
-                        objective_terms.append(var * 10)
-                    if c.code in avoid_courses or course_key in avoid_courses:
-                        objective_terms.append(var * -100)
-                    if c.level in preferred_levels:
-                        objective_terms.append(var * 5)
-                    if t.label in preferred_timeslots:
-                        objective_terms.append(var * 5)
-                    if t.label in avoid_timeslots:
-                        objective_terms.append(var * -50)
-                    for day in avoid_days:
-                        if day in t.days:
+                        if c.code in preferred_courses or course_key in preferred_courses:
+                            objective_terms.append(var * 10)
+                        if c.code in avoid_courses or course_key in avoid_courses:
+                            objective_terms.append(var * -100)
+                        if c.level in preferred_levels:
+                            objective_terms.append(var * 5)
+                        if t.label in preferred_timeslots:
+                            objective_terms.append(var * 5)
+                        if t.label in avoid_timeslots:
                             objective_terms.append(var * -50)
+                        for day in avoid_days:
+                            if day in t.days:
+                                objective_terms.append(var * -50)
 
         model.Maximize(sum(objective_terms))
 
@@ -240,16 +264,18 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
             for p in professors:
                 for c in courses:
                     for t in timeslots:
-                        if solver.Value(assign[(p.id, c.id, t.id)]) == 1:
-                            new_sec = Section(
-                                course_id=c.id,
-                                professor_id=p.id,
-                                timeslot_id=t.id,
-                                schedule_id=new_schedule.id,
-                                status="Assigned"
-                            )
-                            db.add(new_sec)
-                            sections_created += 1
+                        for r in rooms:
+                            if solver.Value(assign[(p.id, c.id, t.id, r.id)]) == 1:
+                                new_sec = Section(
+                                    course_id=c.id,
+                                    professor_id=p.id,
+                                    timeslot_id=t.id,
+                                    room_id=r.id,
+                                    schedule_id=new_schedule.id,
+                                    status="Assigned"
+                                )
+                                db.add(new_sec)
+                                sections_created += 1
             
             db.commit()
             

@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import {
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription
 } from '@/components/ui/dialog';
-import { Clock, User, BookOpen, AlertCircle } from 'lucide-react';
+import { Clock, User, BookOpen, AlertCircle, MapPin } from 'lucide-react';
 
 interface ScheduleCalendarProps {
     sections: Section[];
@@ -188,6 +188,9 @@ export default function ScheduleCalendar({ sections }: ScheduleCalendarProps) {
                                     >
                                         <div className="font-bold truncate leading-tight">{s.course_code}</div>
                                         <div className="truncate opacity-80 leading-tight">{s.professor_name || 'Unassigned'}</div>
+                                        {s.room_building && heightPx > 40 && (
+                                            <div className="truncate opacity-70 leading-tight mt-0.5">{s.room_building} {s.room_number}</div>
+                                        )}
                                     </div>
                                 );
                             })}
@@ -219,6 +222,11 @@ export default function ScheduleCalendar({ sections }: ScheduleCalendarProps) {
                             <Clock className="w-4 h-4 text-gray-400" />
                             <span className="font-medium">Time:</span>
                             <span>{selectedSection?.timeslot_label}</span>
+                        </div>
+                        <div className="flex items-center gap-3 text-sm">
+                            <MapPin className="w-4 h-4 text-gray-400" />
+                            <span className="font-medium">Room:</span>
+                            <span>{selectedSection?.room_building ? `${selectedSection.room_building} ${selectedSection.room_number}` : 'TBD'}</span>
                         </div>
                         <div className="flex items-center gap-3 text-sm">
                             <AlertCircle className="w-4 h-4 text-gray-400" />

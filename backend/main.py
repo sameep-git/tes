@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -5,7 +6,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from . import models
 from .database import engine
-from .routers import health, professors, courses, schedules, preferences, chat, timeslots, insights
+from .routers import health, professors, courses, schedules, preferences, chat, timeslots, insights, rooms
 from .tools import trigger_poll_unread_replies
 
 # Create DB tables
@@ -44,10 +45,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="TES API", lifespan=lifespan)
 
-# Setup CORS for the React frontend (running on port 3000)
+# Setup CORS
+# Allow localhost for dev, allow frontend container host/IPs if needed
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["*"], # Relaxed for Docker network flexibility. Restrict in prod.
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -61,3 +63,4 @@ app.include_router(schedules.router)
 app.include_router(preferences.router)
 app.include_router(chat.router)
 app.include_router(insights.router)
+app.include_router(rooms.router)
