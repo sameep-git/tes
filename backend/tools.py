@@ -33,7 +33,7 @@ def get_professor(prof_id: int) -> str:
         return json.dumps({
             "id": prof.id, "name": prof.name, "email": prof.email,
             "office": prof.office, "rank": prof.rank,
-            "max_sections": prof.max_sections, "active": prof.active
+            "fall_count": prof.fall_count, "spring_count": prof.spring_count, "active": prof.active
         })
     finally:
         db.close()
@@ -53,7 +53,7 @@ def get_courses(semester: Optional[str] = None, year: Optional[int] = None) -> s
         return json.dumps([{
             "id": c.id, "code": c.code, "name": c.name, "semester": c.semester, "year": c.year, "credits": c.credits,
             "level": c.level, "min_sections": c.min_sections,
-            "max_sections": c.max_sections,
+            "max_sections": c.max_sections, "capacity": c.capacity,
             "core_ssc": c.core_ssc, "core_ht": c.core_ht,
             "core_ga": c.core_ga, "core_wem": c.core_wem
         } for c in courses])
@@ -328,7 +328,7 @@ def list_professors() -> str:
         return json.dumps([{
             "id": p.id, "name": p.name, "email": p.email,
             "office": p.office, "rank": p.rank,
-            "max_sections": p.max_sections, "active": p.active
+            "fall_count": p.fall_count, "spring_count": p.spring_count, "active": p.active
         } for p in profs])
     finally:
         db.close()
@@ -339,7 +339,8 @@ def create_professor(
     email: str,
     rank: str,
     office: Optional[str] = None,
-    max_sections: int = 3
+    fall_count: int = 3,
+    spring_count: int = 3
 ) -> str:
     """Create a new professor in the system."""
     db = SessionLocal()
@@ -350,7 +351,7 @@ def create_professor(
 
         prof = Professor(
             name=name, email=email, rank=rank,
-            office=office, max_sections=max_sections, active=True
+            office=office, fall_count=fall_count, spring_count=spring_count, active=True
         )
         db.add(prof)
         db.commit()
@@ -372,7 +373,8 @@ def update_professor(
     email: Optional[str] = None,
     rank: Optional[str] = None,
     office: Optional[str] = None,
-    max_sections: Optional[int] = None,
+    fall_count: Optional[int] = None,
+    spring_count: Optional[int] = None,
     active: Optional[bool] = None
 ) -> str:
     """Update editable fields on a professor. Only provided fields are changed."""
@@ -390,8 +392,10 @@ def update_professor(
             prof.rank = rank
         if office is not None:
             prof.office = office
-        if max_sections is not None:
-            prof.max_sections = max_sections
+        if fall_count is not None:
+            prof.fall_count = fall_count
+        if spring_count is not None:
+            prof.spring_count = spring_count
         if active is not None:
             prof.active = active
 
@@ -574,12 +578,15 @@ def run_preflight_checks(semester: str, year: int) -> str:
     be resolved before the solver can run.
 
     Checks:
-      1. Capacity: sum(prof.max_sections) >= sum(course.min_sections)
+      1. Capacity: sum(prof.fall_count/spring_count) >= sum(course.min_sections)
       2. Missing profs: any active professors without a preference record
       3. Unapproved prefs: any preference records with admin_approved = False
     """
     semester = semester.capitalize() if semester else semester
     db = SessionLocal()
+    def get_load(p: Professor, semester: str) -> int:
+        return p.fall_count if semester.lower() == "fall" else p.spring_count
+
     try:
         blockers = []
 
@@ -587,7 +594,7 @@ def run_preflight_checks(semester: str, year: int) -> str:
         profs = db.query(Professor).filter(Professor.active == True).all()
         courses = db.query(Course).filter(Course.semester == semester, Course.year == year).all()
 
-        total_capacity = sum(p.max_sections for p in profs)
+        total_capacity = sum(get_load(p, semester) for p in profs)
         total_demand = sum(c.min_sections for c in courses)
 
         if total_capacity < total_demand:

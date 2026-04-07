@@ -9,14 +9,16 @@ def seed_db():
     db = SessionLocal()
     
     print("Clearing old data...")
+    # Delete child records before parent records to respect foreign keys
+    db.query(Preference).delete()
     db.query(Section).delete()
     db.query(Schedule).delete()
-    db.query(Constraint).delete()
-    db.query(TimeSlot).delete()
     db.query(Course).delete()
+    db.query(CourseTemplate).delete()
     db.query(Professor).delete()
     db.query(Room).delete()
-    db.query(Preference).delete()
+    db.query(TimeSlot).delete()
+    db.query(Constraint).delete()
     db.commit()
 
     print("Seeding rooms...")
@@ -62,29 +64,29 @@ def seed_db():
 
     print("Seeding professors...")
     professors = [
-        Professor(name="Graham Gardner", email="graham.gardner@tcu.edu", rank="Assistant", fall_count=2, spring_count=3, tcu_id="100000001"),
-        Professor(name="Stepan Gordeev", email="s.gordeev@tcu.edu", rank="Assistant", fall_count=2, spring_count=3, tcu_id="100000002"),
-        Professor(name="Maxwell Bullard", email="m.bullard@tcu.edu", rank="Assistant", fall_count=2, spring_count=2, tcu_id="100000003"),
-        Professor(name="Haley Wilbert", email="h.wilbert@tcu.edu", rank="Assistant", fall_count=2, spring_count=2, tcu_id="100000004"),
-        Professor(name="Rishav Bista", email="r.bista@tcu.edu", rank="Associate", fall_count=2, spring_count=1, tcu_id="100000005"),
-        Professor(name="Dawn C. Elliott", email="d.elliott@tcu.edu", rank="Associate", fall_count=1, spring_count=1, tcu_id="100000006"),
-        Professor(name="Weiwei Liu", email="w.liu1236@tcu.edu", rank="Associate", fall_count=2, spring_count=3, tcu_id="100000007"),
-        Professor(name="Robert F. Garnett", email="r.garnett@tcu.edu", rank="Full", fall_count=2, spring_count=3, tcu_id="100000008"),
-        Professor(name="John T. Harvey", email="j.harvey@tcu.edu", rank="Full", fall_count=1, spring_count=1, tcu_id="100000009"),
-        Professor(name="Zackary B. Hawley", email="z.hawley@tcu.edu", rank="Full", fall_count=1, spring_count=1, tcu_id="100000010"),
-        Professor(name="Stephen Quinn", email="s.quinn@tcu.edu", rank="Full", fall_count=3, spring_count=2, tcu_id="100000011"),
-        Professor(name="Kiril Tochkov", email="k.tochkov@tcu.edu", rank="Full", fall_count=2, spring_count=3, tcu_id="100000012"),
-        Professor(name="Isabella Yerby", email="i.yerby@tcu.edu", rank="Instructor 1", fall_count=4, spring_count=4, tcu_id="100000013"),
-        Professor(name="Douglas Glenn Butler", email="d.butler@tcu.edu", rank="Instructor 1", fall_count=4, spring_count=4, tcu_id="100000014"),
-        Professor(name="Stephen Nicar", email="s.nicar@tcu.edu", rank="Instructor 1", fall_count=4, spring_count=4, tcu_id="100000015"),
-        Professor(name="Rosemarie Fike", email="rosemarie.fike@tcu.edu", rank="Instructor 2", fall_count=4, spring_count=3, tcu_id="100000016"),
-        Professor(name="Xiaodan Zhao", email="xiaodan.zhao@tcu.edu", rank="Adjunct", fall_count=3, spring_count=3, tcu_id="100000017"),
-        Professor(name="Lee Bailiff", email="lee.bailiff@tcu.edu", rank="Adjunct", fall_count=3, spring_count=3, tcu_id="100000018"),
-        Professor(name="Horacio Cocchi", email="h.cocchi@tcu.edu", rank="Adjunct", fall_count=3, spring_count=3, tcu_id="100000019"),
-        Professor(name="John Powers", email="john.powers@tcu.edu", rank="Adjunct", fall_count=1, spring_count=1, tcu_id="100000020"),
-        Professor(name="Julie Russell", email="julie.russell@tcu.edu", rank="Adjunct", fall_count=2, spring_count=2, tcu_id="100000021"),
-        Professor(name="Justin Sheffield", email="j.b.sheffield@tcu.edu", rank="Adjunct", fall_count=2, spring_count=2, tcu_id="100000022"),
-        Professor(name="Jill Trask", email="j.trask@tcu.edu", rank="Adjunct", fall_count=3, spring_count=3, tcu_id="100000023"),
+        Professor(name="Graham Gardner", email="graham.gardner@tcu.edu", rank="Assistant", fall_count=2, spring_count=3, tcu_id="108016560"),
+        Professor(name="Stepan Gordeev", email="s.gordeev@tcu.edu", rank="Assistant", fall_count=2, spring_count=3, tcu_id="108017438"),
+        Professor(name="Maxwell Bullard", email="m.bullard@tcu.edu", rank="Assistant", fall_count=2, spring_count=2, tcu_id=None),
+        Professor(name="Haley Wilbert", email="h.wilbert@tcu.edu", rank="Assistant", fall_count=2, spring_count=2, tcu_id=None),
+        Professor(name="Rishav Bista", email="r.bista@tcu.edu", rank="Associate", fall_count=2, spring_count=1, tcu_id="108012962"),
+        Professor(name="Dawn C. Elliott", email="d.elliott@tcu.edu", rank="Associate", fall_count=1, spring_count=1, tcu_id="101072668"),
+        Professor(name="Weiwei Liu", email="w.liu1236@tcu.edu", rank="Associate", fall_count=2, spring_count=3, tcu_id="108011770"),
+        Professor(name="Robert F. Garnett", email="r.garnett@tcu.edu", rank="Full", fall_count=2, spring_count=3, tcu_id="101009405"),
+        Professor(name="John T. Harvey", email="j.harvey@tcu.edu", rank="Full", fall_count=1, spring_count=1, tcu_id="101013266"),
+        Professor(name="Zackary B. Hawley", email="z.hawley@tcu.edu", rank="Full", fall_count=1, spring_count=1, tcu_id="107416683"),
+        Professor(name="Stephen Quinn", email="s.quinn@tcu.edu", rank="Full", fall_count=3, spring_count=2, tcu_id="101010932"),
+        Professor(name="Kiril Tochkov", email="k.tochkov@tcu.edu", rank="Full", fall_count=2, spring_count=3, tcu_id="106697023"),
+        Professor(name="Isabella Yerby", email="i.yerby@tcu.edu", rank="Instructor 1", fall_count=4, spring_count=4, tcu_id="108018153"),
+        Professor(name="Douglas Glenn Butler", email="d.butler@tcu.edu", rank="Instructor 1", fall_count=4, spring_count=4, tcu_id="106553418"),
+        Professor(name="Stephen Nicar", email="s.nicar@tcu.edu", rank="Instructor 1", fall_count=4, spring_count=4, tcu_id="108013472"),
+        Professor(name="Rosemarie Fike", email="rosemarie.fike@tcu.edu", rank="Instructor 2", fall_count=4, spring_count=3, tcu_id="108011128"),
+        Professor(name="Xiaodan Zhao", email="xiaodan.zhao@tcu.edu", rank="Adjunct", fall_count=3, spring_count=3, tcu_id="108016479"),
+        Professor(name="Lee Bailiff", email="lee.bailiff@tcu.edu", rank="Adjunct", fall_count=3, spring_count=3, tcu_id="108010151"),
+        Professor(name="Horacio Cocchi", email="h.cocchi@tcu.edu", rank="Adjunct", fall_count=3, spring_count=3, tcu_id="108016491"),
+        Professor(name="John Powers", email="john.powers@tcu.edu", rank="Adjunct", fall_count=1, spring_count=1, tcu_id="108017411"),
+        Professor(name="Julie Russell", email="julie.russell@tcu.edu", rank="Adjunct", fall_count=2, spring_count=2, tcu_id="108010120"),
+        Professor(name="Justin Sheffield", email="j.b.sheffield@tcu.edu", rank="Adjunct", fall_count=2, spring_count=2, tcu_id="103201661"),
+        Professor(name="Jill Trask", email="j.trask@tcu.edu", rank="Adjunct", fall_count=3, spring_count=3, tcu_id="108015288"),
     ]
     db.add_all(professors)
 

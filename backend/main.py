@@ -1,5 +1,6 @@
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -9,8 +10,32 @@ from .database import engine
 from .routers import health, professors, courses, schedules, preferences, chat, timeslots, insights, rooms
 from .tools import trigger_poll_unread_replies
 
-# Create DB tables
-models.Base.metadata.create_all(bind=engine)
+
+def run_migrations():
+    """Run Alembic migrations programmatically to bring the DB to the latest version."""
+    from alembic.config import Config
+    from alembic import command
+
+    # Locate alembic.ini relative to this file (backend/main.py → backend/alembic.ini)
+    backend_dir = Path(__file__).resolve().parent
+    alembic_ini = backend_dir / "alembic.ini"
+
+    if not alembic_ini.exists():
+        print(f"[MIGRATIONS] alembic.ini not found at {alembic_ini}, falling back to create_all()")
+        models.Base.metadata.create_all(bind=engine)
+        return
+
+    alembic_cfg = Config(str(alembic_ini))
+    # Override the script_location to be absolute so it works regardless of cwd
+    alembic_cfg.set_main_option("script_location", str(backend_dir / "alembic"))
+
+    print("[MIGRATIONS] Running alembic upgrade head...")
+    command.upgrade(alembic_cfg, "head")
+    print("[MIGRATIONS] Database is up to date.")
+
+
+# Apply migrations on import (before the app starts serving)
+run_migrations()
 
 # Setup the background scheduler for automatic email polling
 scheduler = BackgroundScheduler()
@@ -46,10 +71,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="TES API", lifespan=lifespan)
 
 # Setup CORS
-# Allow localhost for dev, allow frontend container host/IPs if needed
+cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Relaxed for Docker network flexibility. Restrict in prod.
+    allow_origins=[origin.strip() for origin in cors_origins],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

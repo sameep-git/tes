@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
 
 from ..database import get_db
@@ -19,15 +20,18 @@ def get_courses(
 ):
     query = db.query(models.Course)
     
-    if semester is not None and year is not None:
-        exact_match_query = query.filter(
-            func.lower(models.Course.semester) == semester.lower(),
-            models.Course.year == year
-        )
-        exact_matches = exact_match_query.offset(skip).limit(limit).all()
+    if semester is not None:
+        query = query.filter(func.lower(models.Course.semester) == semester.lower())
+    if year is not None:
+        query = query.filter(models.Course.year == year)
         
-        if len(exact_matches) > 0:
-            return exact_matches
+    if semester is not None and year is not None:
+        # Check if ANY courses exist for this exact term using .first() to ignore pagination
+        exact_match_query = query
+        existing_match = exact_match_query.first()
+        
+        if existing_match is not None:
+            return exact_match_query.offset(skip).limit(limit).all()
             
         # AUTO-CLONE LOGIC: if requested semester has no specific courses cloned yet,
         # we will fetch all CourseTemplates and clone them into the Course table.
@@ -53,10 +57,14 @@ def get_courses(
                 )
                 new_courses.append(new_course)
             
-            db.add_all(new_courses)
-            db.commit()
+            try:
+                db.add_all(new_courses)
+                db.commit()
+            except IntegrityError:
+                # Another request already cloned the templates
+                db.rollback()
             
-            # Re-fetch after commit to ensure IDs and relationships are populated
+            # Re-fetch after commit/rollback to ensure IDs and relationships are populated
             return exact_match_query.offset(skip).limit(limit).all()
 
     # If no specific filter (or no templates to clone), just return them
