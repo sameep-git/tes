@@ -9,6 +9,7 @@ from .database import Base
 
 class Room(Base):
     __tablename__ = "rooms"
+    __table_args__ = (UniqueConstraint('building', 'room_number', name='uix_room_building_number'),)
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     building: Mapped[str] = mapped_column()

@@ -15,6 +15,7 @@ def run_migrations():
     """Run Alembic migrations programmatically to bring the DB to the latest version."""
     from alembic.config import Config
     from alembic import command
+    from sqlalchemy import inspect
 
     # Locate alembic.ini relative to this file (backend/main.py → backend/alembic.ini)
     backend_dir = Path(__file__).resolve().parent
@@ -29,13 +30,15 @@ def run_migrations():
     # Override the script_location to be absolute so it works regardless of cwd
     alembic_cfg.set_main_option("script_location", str(backend_dir / "alembic"))
 
-    print("[MIGRATIONS] Running alembic upgrade head...")
-    command.upgrade(alembic_cfg, "head")
+    inspector = inspect(engine)
+    if not inspector.has_table("alembic_version") and inspector.has_table("professors"):
+        print("[MIGRATIONS] Existing database detected without alembic_version. Stamping head...")
+        command.stamp(alembic_cfg, "head")
+    else:
+        print("[MIGRATIONS] Running alembic upgrade head...")
+        command.upgrade(alembic_cfg, "head")
+        
     print("[MIGRATIONS] Database is up to date.")
-
-
-# Apply migrations on import (before the app starts serving)
-run_migrations()
 
 # Setup the background scheduler for automatic email polling
 scheduler = BackgroundScheduler()
@@ -55,6 +58,9 @@ def scheduled_poll():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Apply migrations on startup (before the app starts serving)
+    run_migrations()
+
     # Start the scheduler when the app starts
     # NOTE: This scheduler runs in-process. If the app is deployed with multiple
     # worker processes or replicas, each will poll the same inbox concurrently,
@@ -75,7 +81,7 @@ cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin.strip() for origin in cors_origins],
+    allow_origins=[origin.strip() for origin in cors_origins if origin.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

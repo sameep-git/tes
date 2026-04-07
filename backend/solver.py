@@ -52,10 +52,6 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
 
         assumptions_map = {}
 
-        # Helper to safely yield variables that actually exist in the dict
-        def get_vars(*args, **kwargs):
-            return [assign[k] for k in assign.keys() if all(k[i] == v for i, v in kwargs.items())]
-
         # 4. HARD CONSTRAINTS
         
         # A. A professor cannot teach more than one course at the exact same time
@@ -119,10 +115,15 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
                 assumptions_map[b.Index()] = f"Professor {p.name} cannot teach more than {limit} sections."
 
         # D. Core Requirements Constraint
-        ssc_sections = [assign[k] for k in assign for c in courses if k[1] == c.id and c.core_ssc]
-        ht_sections = [assign[k] for k in assign for c in courses if k[1] == c.id and c.core_ht]
-        ga_sections = [assign[k] for k in assign for c in courses if k[1] == c.id and c.core_ga]
-        wem_sections = [assign[k] for k in assign for c in courses if k[1] == c.id and c.core_wem]
+        ssc_course_ids = {c.id for c in courses if c.core_ssc}
+        ht_course_ids = {c.id for c in courses if c.core_ht}
+        ga_course_ids = {c.id for c in courses if c.core_ga}
+        wem_course_ids = {c.id for c in courses if c.core_wem}
+
+        ssc_sections = [assign[k] for k in assign if k[1] in ssc_course_ids]
+        ht_sections = [assign[k] for k in assign if k[1] in ht_course_ids]
+        ga_sections = [assign[k] for k in assign if k[1] in ga_course_ids]
+        wem_sections = [assign[k] for k in assign if k[1] in wem_course_ids]
         
         if ssc_sections: 
             b = model.NewBoolVar("assump_D_ssc")
@@ -183,17 +184,20 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
         ).first()
         if blocked_row and blocked_row.value_json:
             blocked_labels = set(blocked_row.value_json.get("labels", []))
-            blocked_ids = {t.id for t in timeslots if t.label in blocked_labels}
-            for tid in blocked_ids:
+            blocked_ids = {t.id: t.label for t in timeslots if t.label in blocked_labels}
+            for tid, label in blocked_ids.items():
                 b = model.NewBoolVar(f"assump_G_blk_t{tid}")
                 vars_blocked = [assign[k] for k in assign if k[2] == tid]
                 for var in vars_blocked:
                     model.Add(var == 0).OnlyEnforceIf(b)
                 model.AddAssumption(b)
-                assumptions_map[b.Index()] = f"A timeslot is marked as blocked by administration."
+                assumptions_map[b.Index()] = f"Timeslot {label} is marked as blocked by administration."
 
         # 5. SOFT CONSTRAINTS (Objective Function)
         objective_terms = []
+        
+        course_dict = {c.id: c for c in courses}
+        timeslot_dict = {t.id: t for t in timeslots}
 
         for p in professors:
             pref = preferences.get(p.id, {})
@@ -213,8 +217,8 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
                 c_id = k[1]
                 t_id = k[2]
                 
-                c = next((course for course in courses if course.id == c_id), None)
-                t = next((timeslot for timeslot in timeslots if timeslot.id == t_id), None)
+                c = course_dict.get(c_id)
+                t = timeslot_dict.get(t_id)
                 
                 if c and t:
                     course_key = f"{c.code} | {c.name}"

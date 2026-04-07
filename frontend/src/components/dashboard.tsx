@@ -892,7 +892,7 @@ export default function Dashboard() {
                                     <TableCell>{sec.professor_name ?? <span className="text-gray-300">Unassigned</span>}</TableCell>
                                     <TableCell>{sec.timeslot_label ?? <span className="text-gray-300">TBD</span>}</TableCell>
                                     <TableCell>
-                                      {sec.room_building ? (
+                                      {sec.room_building && sec.room_number ? (
                                         <Badge variant="outline" className="text-xs bg-slate-50">
                                           {sec.room_building} {sec.room_number}
                                         </Badge>

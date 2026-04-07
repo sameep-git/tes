@@ -31,7 +31,7 @@ def get_professor(prof_id: int) -> str:
         if not prof:
             return json.dumps({"error": f"Professor with ID {prof_id} not found."})
         return json.dumps({
-            "id": prof.id, "name": prof.name, "email": prof.email,
+            "id": prof.id, "tcu_id": prof.tcu_id, "name": prof.name, "email": prof.email,
             "office": prof.office, "rank": prof.rank,
             "fall_count": prof.fall_count, "spring_count": prof.spring_count, "active": prof.active
         })
@@ -326,7 +326,7 @@ def list_professors() -> str:
     try:
         profs = db.query(Professor).all()
         return json.dumps([{
-            "id": p.id, "name": p.name, "email": p.email,
+            "id": p.id, "tcu_id": p.tcu_id, "name": p.name, "email": p.email,
             "office": p.office, "rank": p.rank,
             "fall_count": p.fall_count, "spring_count": p.spring_count, "active": p.active
         } for p in profs])
@@ -596,6 +596,13 @@ def run_preflight_checks(semester: str, year: int) -> str:
 
         total_capacity = sum(get_load(p, semester) for p in profs)
         total_demand = sum(c.min_sections for c in courses)
+
+        if len(courses) == 0:
+            blockers.append({
+                "type": "no_courses",
+                "message": f"No courses found for {semester} {year}. "
+                           "Clone from course templates or create courses before running the solver."
+            })
 
         if total_capacity < total_demand:
             blockers.append({
