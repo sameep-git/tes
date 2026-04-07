@@ -1,6 +1,7 @@
 fastapi
 uvicorn
 sqlalchemy
+alembic
 pydantic
 pydantic[email]
 pydantic-settings

@@ -1,132 +1,140 @@
 from sqlalchemy.orm import Session
-from .database import engine, Base, SessionLocal
-from .models import Professor, Course, TimeSlot, Constraint, Schedule, Section, Preference
+from .database import SessionLocal
+from .models import Professor, Course, TimeSlot, Constraint, Schedule, Section, Preference, Room, CourseTemplate
 
 def seed_db():
-    print("Creating tables...")
-    Base.metadata.create_all(bind=engine)
-    
+    # NOTE: Schema is managed by Alembic (run via `alembic upgrade head` or automatically
+    # on app startup). Do NOT call Base.metadata.create_all() here — it bypasses migrations.
     db = SessionLocal()
     
     print("Clearing old data...")
+    # Delete child records before parent records to respect foreign keys
+    db.query(Preference).delete()
     db.query(Section).delete()
     db.query(Schedule).delete()
-    db.query(Constraint).delete()
-    db.query(TimeSlot).delete()
     db.query(Course).delete()
+    db.query(CourseTemplate).delete()
     db.query(Professor).delete()
+    db.query(Room).delete()
+    db.query(TimeSlot).delete()
+    db.query(Constraint).delete()
     db.commit()
+
+    print("Seeding rooms...")
+    rooms = [
+        Room(building="SAD", room_number="108", capacity=41),
+        Room(building="SAD", room_number="110", capacity=23),
+        Room(building="SAD", room_number="113", capacity=5),
+        Room(building="SAD", room_number="114", capacity=24),
+        Room(building="SAD", room_number="115", capacity=32),
+        Room(building="SAD", room_number="117", capacity=24),
+        Room(building="SAD", room_number="122", capacity=24),
+        Room(building="SAD", room_number="123", capacity=34),
+        Room(building="SAD", room_number="208", capacity=24),
+        Room(building="SAD", room_number="209", capacity=32),
+        Room(building="SAD", room_number="216", capacity=18),
+        Room(building="SAD", room_number="217", capacity=32),
+        Room(building="SAD", room_number="218", capacity=24),
+        Room(building="SAD", room_number="221", capacity=22),
+        Room(building="SAD", room_number="222", capacity=38),
+        Room(building="SAD", room_number="223", capacity=16),
+        Room(building="SAD", room_number="420", capacity=24),
+        Room(building="SAD", room_number="421", capacity=32),
+        Room(building="SAD", room_number="422", capacity=24),
+        Room(building="SAD", room_number="442", capacity=24),
+        Room(building="SCHAR", room_number="1001", capacity=52),
+        Room(building="SCHAR", room_number="1007", capacity=24),
+        Room(building="SCHAR", room_number="1008", capacity=64),
+        Room(building="SCHAR", room_number="1010", capacity=58),
+        Room(building="SCHAR", room_number="1011", capacity=24),
+        Room(building="SCHAR", room_number="2003", capacity=20),
+        Room(building="SCHAR", room_number="2008", capacity=32),
+        Room(building="SCHAR", room_number="2010", capacity=30),
+        Room(building="SCHAR", room_number="2011", capacity=15),
+        Room(building="SCHAR", room_number="3003", capacity=18),
+        Room(building="SCHAR", room_number="3004", capacity=24),
+        Room(building="SCHAR", room_number="3019", capacity=15),
+        Room(building="SCHAR", room_number="4002", capacity=18),
+        Room(building="SCHAR", room_number="4009", capacity=18),
+        Room(building="SCHAR", room_number="4015", capacity=22),
+        Room(building="SCHAR", room_number="4022", capacity=24),
+    ]
+    db.add_all(rooms)
 
     print("Seeding professors...")
     professors = [
-        Professor(name="Graham Gardner", email="graham.gardner@tcu.edu", rank="Assistant Professor", max_sections=3),
-        Professor(name="Stepan Gordeev", email="s.gordeev@tcu.edu", rank="Assistant Professor", max_sections=3),
-        Professor(name="Maxwell Bullard", email="m.bullard@tcu.edu", rank="Assistant Professor", max_sections=3),
-        Professor(name="Haley Wilbert", email="h.wilbert@tcu.edu", rank="Assistant Professor", max_sections=3),
-        Professor(name="Rishav Bista", email="r.bista@tcu.edu", rank="Associate Professor", max_sections=3),
-        Professor(name="Dawn Elliott", email="d.elliott@tcu.edu", rank="Associate Professor", max_sections=3),
-        Professor(name="Weiwei Liu", email="w.liu1236@tcu.edu", rank="Associate Professor", max_sections=3),
-        Professor(name="Rob Garnett", email="r.garnett@tcu.edu", rank="Professor", max_sections=3),
-        Professor(name="John Harvey", email="j.harvey@tcu.edu", rank="Professor", max_sections=3),
-        Professor(name="Zack Hawley", email="z.hawley@tcu.edu", rank="Professor", max_sections=3),
-        Professor(name="Stephen Quinn", email="s.quinn@tcu.edu", rank="Professor", max_sections=3),
-        Professor(name="Kiril Tochkov", email="k.tochkov@tcu.edu", rank="Professor", max_sections=3),
-        Professor(name="Isabella Yerby", email="i.yerby@tcu.edu", rank="Instructor I", max_sections=4),
-        Professor(name="Douglas Glenn Butler", email="d.butler@tcu.edu", rank="Instructor I", max_sections=4),
-        Professor(name="Michael Butler", email="m.butler@tcu.edu", rank="Instructor I", max_sections=4),
-        Professor(name="John Lovett", email="j.lovett@tcu.edu", rank="Instructor I", max_sections=4),
-        Professor(name="Stephen Nicar", email="s.nicar@tcu.edu", rank="Instructor I", max_sections=4),
-        Professor(name="Rosemarie Fike", email="rosemarie.fike@tcu.edu", rank="Instructor II", max_sections=4),
-        Professor(name="Xiaodan Zhao", email="xiaodan.zhao@tcu.edu", rank="Adjunct", max_sections=2),
-        Professor(name="Lee Bailiff", email="lee.bailiff@tcu.edu", rank="Adjunct", max_sections=2),
-        Professor(name="Horacio Cocchi", email="h.cocchi@tcu.edu", rank="Adjunct", max_sections=2),
-        Professor(name="John Powers", email="john.powers@tcu.edu", rank="Adjunct", max_sections=2),
-        Professor(name="Julie Russell", email="julie.russell@tcu.edu", rank="Adjunct", max_sections=2),
-        Professor(name="Justin Sheffield", email="j.b.sheffield@tcu.edu", rank="Adjunct", max_sections=2),
-        Professor(name="Jill Trask", email="j.trask@tcu.edu", rank="Adjunct", max_sections=2),
+        Professor(name="Graham Gardner", email="graham.gardner@tcu.edu", rank="Assistant", fall_count=2, spring_count=3, tcu_id="108016560"),
+        Professor(name="Stepan Gordeev", email="s.gordeev@tcu.edu", rank="Assistant", fall_count=2, spring_count=3, tcu_id="108017438"),
+        Professor(name="Maxwell Bullard", email="m.bullard@tcu.edu", rank="Assistant", fall_count=2, spring_count=2, tcu_id=None),
+        Professor(name="Haley Wilbert", email="h.wilbert@tcu.edu", rank="Assistant", fall_count=2, spring_count=2, tcu_id=None),
+        Professor(name="Rishav Bista", email="r.bista@tcu.edu", rank="Associate", fall_count=2, spring_count=1, tcu_id="108012962"),
+        Professor(name="Dawn C. Elliott", email="d.elliott@tcu.edu", rank="Associate", fall_count=1, spring_count=1, tcu_id="101072668"),
+        Professor(name="Weiwei Liu", email="w.liu1236@tcu.edu", rank="Associate", fall_count=2, spring_count=3, tcu_id="108011770"),
+        Professor(name="Robert F. Garnett", email="r.garnett@tcu.edu", rank="Full", fall_count=2, spring_count=3, tcu_id="101009405"),
+        Professor(name="John T. Harvey", email="j.harvey@tcu.edu", rank="Full", fall_count=1, spring_count=1, tcu_id="101013266"),
+        Professor(name="Zackary B. Hawley", email="z.hawley@tcu.edu", rank="Full", fall_count=1, spring_count=1, tcu_id="107416683"),
+        Professor(name="Stephen Quinn", email="s.quinn@tcu.edu", rank="Full", fall_count=3, spring_count=2, tcu_id="101010932"),
+        Professor(name="Kiril Tochkov", email="k.tochkov@tcu.edu", rank="Full", fall_count=2, spring_count=3, tcu_id="106697023"),
+        Professor(name="Isabella Yerby", email="i.yerby@tcu.edu", rank="Instructor 1", fall_count=4, spring_count=4, tcu_id="108018153"),
+        Professor(name="Douglas Glenn Butler", email="d.butler@tcu.edu", rank="Instructor 1", fall_count=4, spring_count=4, tcu_id="106553418"),
+        Professor(name="Stephen Nicar", email="s.nicar@tcu.edu", rank="Instructor 1", fall_count=4, spring_count=4, tcu_id="108013472"),
+        Professor(name="Rosemarie Fike", email="rosemarie.fike@tcu.edu", rank="Instructor 2", fall_count=4, spring_count=3, tcu_id="108011128"),
+        Professor(name="Xiaodan Zhao", email="xiaodan.zhao@tcu.edu", rank="Adjunct", fall_count=3, spring_count=3, tcu_id="108016479"),
+        Professor(name="Lee Bailiff", email="lee.bailiff@tcu.edu", rank="Adjunct", fall_count=3, spring_count=3, tcu_id="108010151"),
+        Professor(name="Horacio Cocchi", email="h.cocchi@tcu.edu", rank="Adjunct", fall_count=3, spring_count=3, tcu_id="108016491"),
+        Professor(name="John Powers", email="john.powers@tcu.edu", rank="Adjunct", fall_count=1, spring_count=1, tcu_id="108017411"),
+        Professor(name="Julie Russell", email="julie.russell@tcu.edu", rank="Adjunct", fall_count=2, spring_count=2, tcu_id="108010120"),
+        Professor(name="Justin Sheffield", email="j.b.sheffield@tcu.edu", rank="Adjunct", fall_count=2, spring_count=2, tcu_id="103201661"),
+        Professor(name="Jill Trask", email="j.trask@tcu.edu", rank="Adjunct", fall_count=3, spring_count=3, tcu_id="108015288"),
     ]
     db.add_all(professors)
 
-    print("Seeding courses...")
-    semester = "Fall"
-    year = 2026
+    print("Seeding courses templates...")
     
     courses = [
-        # 10000 level courses (Intros)
-        Course(code="ECON 10223", name="Intro Microeconomics", semester=semester, year=year, level=10000, min_sections=4, max_sections=8, core_ssc=True),
-        Course(code="ECON 10233", name="Intro Macroeconomics", semester=semester, year=year, level=10000, min_sections=4, max_sections=8, core_ssc=True),
-        Course(code="ECON 10223", name="Intro Micro - Honors", semester=semester, year=year, level=10000, min_sections=1, max_sections=2, core_ssc=True),
-        Course(code="ECON 10233", name="Intro Macro - Honors", semester=semester, year=year, level=10000, min_sections=1, max_sections=2, core_ssc=True),
+        CourseTemplate(code="ECON 10223", name="Intro Microeconomics", level=10000, credits=3, default_min_sections=4, default_max_sections=8, default_capacity=45, core_ssc=True),
+        CourseTemplate(code="ECON 10233", name="Intro Macroeconomics", level=10000, credits=3, default_min_sections=4, default_max_sections=8, default_capacity=45, core_ssc=True),
+        CourseTemplate(code="ECON 10223", name="Intro Micro - Honors", level=10000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=45, core_ssc=True),
+        CourseTemplate(code="ECON 10233", name="Intro Macro - Honors", level=10000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=45, core_ssc=True),
 
-        # 30000 level courses (Foundations & Electives)
-        Course(code="ECON 30223", name="Intermediate Microeconomics", semester=semester, year=year, level=30000, min_sections=2, max_sections=3),
-        Course(code="ECON 31223", name="Intermediate Micro: Math Approach", semester=semester, year=year, level=30000, min_sections=1, max_sections=2),
-        Course(code="ECON 30233", name="Intermediate Macroeconomics", semester=semester, year=year, level=30000, min_sections=2, max_sections=3),
-        Course(code="ECON 31233", name="Intermediate Macro: Math Approach", semester=semester, year=year, level=30000, min_sections=1, max_sections=2),
-        Course(code="ECON 30243", name="Contending Perspectives in Economics", semester=semester, year=year, level=30000, min_sections=2, max_sections=3),
-        Course(code="ECON 30213", name="Development Theory", semester=semester, year=year, level=30000, min_sections=1, max_sections=2),
-        Course(code="ECON 30253", name="History of Economic Thought", semester=semester, year=year, level=30000, min_sections=1, max_sections=2, core_wem=True),
-        Course(code="ECON 30433", name="Development Studies", semester=semester, year=year, level=30000, min_sections=1, max_sections=2, core_ga=True),
-        Course(code="ECON 30443", name="Asian Economics", semester=semester, year=year, level=30000, min_sections=1, max_sections=2, core_wem=True),
-        Course(code="ECON 30473", name="Regional and Urban Economics", semester=semester, year=year, level=30000, min_sections=1, max_sections=2),
-        Course(code="ECON 30483", name="Financial History", semester=semester, year=year, level=30000, min_sections=1, max_sections=2, core_ht=True, core_wem=True),
-        Course(code="ECON 30503", name="Health Economics", semester=semester, year=year, level=30000, min_sections=1, max_sections=2),
-        Course(code="ECON 30523", name="Resource and Energy Economics", semester=semester, year=year, level=30000, min_sections=1, max_sections=2),
-        Course(code="ECON 30543", name="Environmental Economics and Policy", semester=semester, year=year, level=30000, min_sections=1, max_sections=2),
-        Course(code="ECON 30733", name="European Economic History II", semester=semester, year=year, level=30000, min_sections=1, max_sections=2, core_ht=True),
-        Course(code="ECON 30773", name="Public Choice", semester=semester, year=year, level=30000, min_sections=1, max_sections=2),
+        CourseTemplate(code="ECON 30223", name="Intermediate Microeconomics", level=30000, credits=3, default_min_sections=2, default_max_sections=3, default_capacity=20),
+        CourseTemplate(code="ECON 31223", name="Intermediate Micro: Math Approach", level=30000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20),
+        CourseTemplate(code="ECON 30233", name="Intermediate Macroeconomics", level=30000, credits=3, default_min_sections=2, default_max_sections=3, default_capacity=20),
+        CourseTemplate(code="ECON 31233", name="Intermediate Macro: Math Approach", level=30000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20),
+        CourseTemplate(code="ECON 30243", name="Contending Perspectives in Economics", level=30000, credits=3, default_min_sections=2, default_max_sections=3, default_capacity=20),
+        CourseTemplate(code="ECON 30213", name="Development Theory", level=30000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20),
+        CourseTemplate(code="ECON 30253", name="History of Economic Thought", level=30000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20, core_wem=True),
+        CourseTemplate(code="ECON 30433", name="Development Studies", level=30000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20, core_ga=True),
+        CourseTemplate(code="ECON 30443", name="Asian Economics", level=30000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20, core_wem=True),
+        CourseTemplate(code="ECON 30473", name="Regional and Urban Economics", level=30000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20),
+        CourseTemplate(code="ECON 30483", name="Financial History", level=30000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20, core_ht=True, core_wem=True),
+        CourseTemplate(code="ECON 30503", name="Health Economics", level=30000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20),
+        CourseTemplate(code="ECON 30523", name="Resource and Energy Economics", level=30000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20),
+        CourseTemplate(code="ECON 30543", name="Environmental Economics and Policy", level=30000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20),
+        CourseTemplate(code="ECON 30733", name="European Economic History II", level=30000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20, core_ht=True),
+        CourseTemplate(code="ECON 30773", name="Public Choice", level=30000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20),
         
-        # 40000 level courses
-        Course(code="ECON 40313", name="Econometrics", semester=semester, year=year, level=40000, min_sections=2, max_sections=3),
-        Course(code="ECON 40323", name="Time Series Econometrics", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40123", name="Game Theory", semester=semester, year=year, level=40000, min_sections=1, max_sections=1),
-        Course(code="ECON 40143", name="Public Finance", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40153", name="Economics of Financial Markets", semester=semester, year=year, level=40000, min_sections=1, max_sections=2, core_wem=True),
-        Course(code="ECON 40213", name="International Trade and Payments", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40223", name="International Monetary Economics", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40333", name="Machine Learning in Economics", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40433", name="Law and Economics", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40493", name="Macro Analysis and Communication", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40513", name="Perspective in Internatl Econ", semester=semester, year=year, level=40000, min_sections=1, max_sections=2, core_ga=True),
+        CourseTemplate(code="ECON 40313", name="Econometrics", level=40000, credits=3, default_min_sections=2, default_max_sections=3, default_capacity=20),
+        CourseTemplate(code="ECON 40323", name="Time Series Econometrics", level=40000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20),
+        CourseTemplate(code="ECON 40123", name="Game Theory", level=40000, credits=3, default_min_sections=1, default_max_sections=1, default_capacity=20),
+        CourseTemplate(code="ECON 40143", name="Public Finance", level=40000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20),
+        CourseTemplate(code="ECON 40153", name="Economics of Financial Markets", level=40000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20, core_wem=True),
+        CourseTemplate(code="ECON 40213", name="International Trade and Payments", level=40000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20),
+        CourseTemplate(code="ECON 40223", name="International Monetary Economics", level=40000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20),
+        CourseTemplate(code="ECON 40333", name="Machine Learning in Economics", level=40000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20),
+        CourseTemplate(code="ECON 40433", name="Law and Economics", level=40000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20),
+        CourseTemplate(code="ECON 40493", name="Macro Analysis and Communication", level=40000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20),
+        CourseTemplate(code="ECON 40513", name="Perspective in Internatl Econ", level=40000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20, core_ga=True),
         
-        # 40970 Special Topics
-        Course(code="ECON 40970", name="Real Estate Principles", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40970", name="Causal Inferences", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40970", name="Growth", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40970", name="Agriculture (Development)", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40970", name="Scientific Computation", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40970", name="International Financial Crises", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40970", name="Big Data in Economics", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
-        Course(code="ECON 40970", name="Global Health", semester=semester, year=year, level=40000, min_sections=1, max_sections=2),
+        CourseTemplate(code="ECON 40970", name="Real Estate Principles", level=40000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20),
+        CourseTemplate(code="ECON 40970", name="Causal Inferences", level=40000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20),
+        CourseTemplate(code="ECON 40970", name="Growth", level=40000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20),
+        CourseTemplate(code="ECON 40970", name="Agriculture (Development)", level=40000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20),
+        CourseTemplate(code="ECON 40970", name="Scientific Computation", level=40000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20),
+        CourseTemplate(code="ECON 40970", name="International Financial Crises", level=40000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20),
+        CourseTemplate(code="ECON 40970", name="Big Data in Economics", level=40000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20),
+        CourseTemplate(code="ECON 40970", name="Global Health", level=40000, credits=3, default_min_sections=1, default_max_sections=2, default_capacity=20),
     ]
-    semester = "Spring"
-    year = 2026
-    spring_courses = [
-        Course(code="ECON 10223", name="Intro Microeconomics", semester=semester, year=year, level=10000, credits=3, min_sections=16, max_sections=18, core_ssc=True),
-        Course(code="ECON 10233", name="Intro Macroeconomics", semester=semester, year=year, level=10000, credits=3, min_sections=10, max_sections=12, core_ssc=True),
-        Course(code="ECON 30003", name="Junior Honors Seminar", semester=semester, year=year, level=30000, credits=3, min_sections=1, max_sections=3),
-        Course(code="ECON 30223", name="Intermed Microeconomics", semester=semester, year=year, level=30000, credits=3, min_sections=1, max_sections=3),
-        Course(code="ECON 30233", name="Intermed Macroeconomics", semester=semester, year=year, level=30000, credits=3, min_sections=2, max_sections=4),
-        Course(code="ECON 30243", name="Contending Perspectives in Eco", semester=semester, year=year, level=30000, credits=3, min_sections=1, max_sections=3),
-        Course(code="ECON 30253", name="Hist of Econ Thought", semester=semester, year=year, level=30000, credits=3, min_sections=1, max_sections=2, core_wem=True),
-        Course(code="ECON 30433", name="Development Studies", semester=semester, year=year, level=30000, credits=3, min_sections=1, max_sections=2, core_ga=True),
-        Course(code="ECON 30443", name="Asian Economics", semester=semester, year=year, level=30000, credits=3, min_sections=1, max_sections=3, core_wem=True),
-        Course(code="ECON 30483", name="Financial History", semester=semester, year=year, level=30000, credits=3, min_sections=1, max_sections=3, core_ht=True, core_wem=True),
-        Course(code="ECON 30543", name="Environ Econ & Policy", semester=semester, year=year, level=30000, credits=3, min_sections=1, max_sections=2),
-        Course(code="ECON 30733", name="European Economic History II", semester=semester, year=year, level=30000, credits=3, min_sections=1, max_sections=2, core_ht=True),
-        Course(code="ECON 30773", name="Public Choice", semester=semester, year=year, level=30000, credits=3, min_sections=1, max_sections=3),
-        Course(code="ECON 31223", name="Inter Micro: Math Approach", semester=semester, year=year, level=30000, credits=3, min_sections=1, max_sections=2),
-        Course(code="ECON 40003", name="Senior Honors Resh Paper", semester=semester, year=year, level=40000, credits=3, min_sections=1, max_sections=3, core_wem=True),
-        Course(code="ECON 40143", name="Public Finance", semester=semester, year=year, level=40000, credits=3, min_sections=1, max_sections=2),
-        Course(code="ECON 40153", name="Eco Of Financial Markets", semester=semester, year=year, level=40000, credits=3, min_sections=1, max_sections=2, core_wem=True),
-        Course(code="ECON 40213", name="International Trade/Pmts", semester=semester, year=year, level=40000, credits=3, min_sections=1, max_sections=2),
-        Course(code="ECON 40313", name="Econometrics", semester=semester, year=year, level=40000, credits=3, min_sections=1, max_sections=3),
-        Course(code="ECON 40323", name="Time Series Econometrics", semester=semester, year=year, level=40000, credits=3, min_sections=1, max_sections=2),
-        Course(code="ECON 40513", name="Perspective in Internatl Econ", semester=semester, year=year, level=40000, credits=3, min_sections=1, max_sections=2, core_ga=True),
-        Course(code="ECON 40970", name="Experimental Course - Big Data in Economics", semester=semester, year=year, level=40000, credits=3, min_sections=1, max_sections=3),
-        Course(code="ECON 40990", name="Economics Internship", semester=semester, year=year, level=40000, credits=3, min_sections=1, max_sections=3),
-    ]
-    courses.extend(spring_courses)
     db.add_all(courses)
 
     print("Seeding time slots...")
@@ -194,75 +202,6 @@ def seed_db():
     db.add_all(constraints)
     db.commit()
 
-    print("Seeding preferences...")
-    # Get professors
-    graham = db.query(Professor).filter_by(name="Graham Gardner").first()
-    stepan = db.query(Professor).filter_by(name="Stepan Gordeev").first()
-    maxwell = db.query(Professor).filter_by(name="Maxwell Bullard").first()
-
-    if graham and stepan and maxwell:
-        # Add preferences
-        preferences = [
-            Preference(
-                professor_id=graham.id,
-                semester="Spring",
-                year=2026,
-                raw_email="I would like to teach Intro Microeconomics and Intermed Microeconomics. I prefer MWF mornings and avoid T R classes if possible. Please don't give me 8am.",
-                parsed_json={
-                    "preferred_courses": ["ECON 10223 | Intro Microeconomics", "ECON 30223 | Intermed Microeconomics"],
-                    "avoid_courses": [],
-                    "preferred_timeslots": ["MWF 9:00-9:50", "MWF 10:00-10:50", "MWF 11:00-11:50"],
-                    "avoid_timeslots": ["MWF 8:00-8:50"],
-                    "avoid_days": ["T", "R"],
-                    "max_load": 3,
-                    "wants_back_to_back": False,
-                    "on_leave": False
-                },
-                confidence=0.92,
-                admin_approved=True
-            ),
-            Preference(
-                professor_id=stepan.id,
-                semester="Spring",
-                year=2026,
-                raw_email="I'm open to teaching Macroeconomics and Econometrics. TR schedule is preferred. Thanks.",
-                parsed_json={
-                    "preferred_courses": ["ECON 10233 | Intro Macroeconomics", "ECON 40313 | Econometrics"],
-                    "avoid_courses": [],
-                    "preferred_timeslots": ["TR 9:30-10:50", "TR 11:00-12:20", "TR 12:30-13:50"],
-                    "avoid_timeslots": [],
-                    "avoid_days": ["M", "W", "F"],
-                    "max_load": 3,
-                    "wants_back_to_back": True,
-                    "on_leave": False
-                },
-                confidence=0.88,
-                admin_approved=False
-            ),
-            Preference(
-                professor_id=maxwell.id,
-                semester="Spring",
-                year=2026,
-                raw_email="I will be on sabbatical this spring.",
-                parsed_json={
-                    "preferred_courses": [],
-                    "avoid_courses": [],
-                    "preferred_timeslots": [],
-                    "avoid_timeslots": [],
-                    "avoid_days": [],
-                    "max_load": 0,
-                    "wants_back_to_back": None,
-                    "on_leave": True,
-                    "notes_for_admin": "Sabbatical"
-                },
-                confidence=0.95,
-                admin_approved=True
-            )
-        ]
-        db.add_all(preferences)
-        db.commit()
-
-    # No schedule seeded for now to allow for blank slate
     db.close()
     print("Seed complete.")
 

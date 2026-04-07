@@ -4,11 +4,13 @@
 
 export interface Professor {
     id: number;
+    tcu_id: string | null;
     name: string;
     email: string;
     office: string | null;
     rank: string;
-    max_sections: number;
+    fall_count: number;
+    spring_count: number;
     active: boolean;
 }
 
@@ -22,6 +24,7 @@ export interface Course {
     level: number;
     min_sections: number;
     max_sections: number;
+    capacity: number;
     core_ssc: boolean;
     core_ht: boolean;
     core_ga: boolean;
@@ -34,6 +37,8 @@ export interface Section {
     course_name: string | null;
     professor_name: string | null;
     timeslot_label: string | null;
+    room_building: string | null;
+    room_number: string | null;
     days: string | null;
     start_time: string | null;
     end_time: string | null;
@@ -60,6 +65,13 @@ export interface TimeSlot {
     section_number: string;
     max_classes: number;
     active: boolean;
+}
+
+export interface Room {
+    id: number;
+    building: string;
+    room_number: string;
+    capacity: number;
 }
 
 export interface Preference {
@@ -113,6 +125,7 @@ export const queryKeys = {
     professors: ['professors'] as const,
     courses: (semester: string, year: number) => ['courses', semester, year] as const,
     timeslots: ['timeslots'] as const,
+    rooms: ['rooms'] as const,
     schedules: (semester: string, year: number) => ['schedules', semester, year] as const,
     preferences: (semester: string, year: number) => ['preferences', semester, year] as const,
     insights: (semester: string, year: number) => ['insights', semester, year] as const,
@@ -136,6 +149,7 @@ export const fetchCourses = (semester?: string, year?: number): Promise<Course[]
     return fetch(`${API}/courses${query}`).then(r => jsonOrThrow<Course[]>(r));
 };
 export const fetchTimeslots = (): Promise<TimeSlot[]> => fetch(`${API}/timeslots`).then(r => jsonOrThrow<TimeSlot[]>(r));
+export const fetchRooms = (): Promise<Room[]> => fetch(`${API}/rooms`).then(r => jsonOrThrow<Room[]>(r));
 
 export const fetchSchedules = (semester: string, year: number): Promise<Schedule[]> =>
     fetch(`${API}/schedules?semester=${encodeURIComponent(semester)}&year=${year}`).then(r => jsonOrThrow<Schedule[]>(r));
@@ -177,4 +191,12 @@ export async function updatePreferenceParsedJson(
         body: JSON.stringify({ parsed_json: parsedJson }),
     });
     return jsonOrThrow<Preference>(res);
+}
+
+export async function initializeCourses(semester: string, year: number): Promise<Course[]> {
+    const res = await fetch(
+        `${API}/courses/initialize/?semester=${encodeURIComponent(semester)}&year=${year}`,
+        { method: 'POST' },
+    );
+    return jsonOrThrow<Course[]>(res);
 }
