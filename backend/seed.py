@@ -1,11 +1,10 @@
 from sqlalchemy.orm import Session
-from .database import engine, Base, SessionLocal
+from .database import SessionLocal
 from .models import Professor, Course, TimeSlot, Constraint, Schedule, Section, Preference, Room, CourseTemplate
 
 def seed_db():
-    print("Creating tables...")
-    Base.metadata.create_all(bind=engine)
-    
+    # NOTE: Schema is managed by Alembic (run via `alembic upgrade head` or automatically
+    # on app startup). Do NOT call Base.metadata.create_all() here — it bypasses migrations.
     db = SessionLocal()
     
     print("Clearing old data...")

@@ -30,6 +30,7 @@ import {
   fetchRooms,
   approvePreference,
   updatePreferenceParsedJson,
+  initializeCourses,
   type Professor,
   type Course,
   type Schedule,
@@ -388,10 +389,32 @@ export default function Dashboard() {
 
   // ---- TanStack Query hooks ----
   const { data: professors = [], isLoading: profsLoading } = useQuery({ queryKey: queryKeys.professors, queryFn: fetchProfessors });
-  const { data: courses = [], isLoading: coursesLoading } = useQuery({ 
-    queryKey: queryKeys.courses(semester, year), 
-    queryFn: () => fetchCourses(semester, year) 
+  const { data: courses = [], isLoading: coursesLoading } = useQuery({
+    queryKey: queryKeys.courses(semester, year),
+    queryFn: () => fetchCourses(semester, year),
   });
+
+  // Auto-initialize courses for a new term: when the query returns an empty list
+  // we fire POST /api/courses/initialize/ once, then invalidate to re-fetch.
+  const initMutation = useMutation({
+    mutationFn: ({ sem, yr }: { sem: string; yr: number }) => initializeCourses(sem, yr),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.courses(semester, year) }),
+  });
+
+  useEffect(() => {
+    if (!coursesLoading && courses.length === 0 && !initMutation.isPending && !initMutation.isSuccess) {
+      initMutation.mutate({ sem: semester, yr: year });
+    }
+  // We intentionally omit initMutation from deps to avoid loops — isPending/isSuccess guard it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courses.length, coursesLoading, semester, year]);
+
+  // Reset the init mutation when the user changes term so it can fire again for a new blank term.
+  useEffect(() => {
+    initMutation.reset();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [semester, year]);
+
   const { data: timeslots = [] } = useQuery({ queryKey: queryKeys.timeslots, queryFn: fetchTimeslots });
   const { data: rooms = [], isLoading: roomsLoading } = useQuery({ queryKey: queryKeys.rooms, queryFn: fetchRooms });
   const { data: schedules = [], isLoading: schedsLoading } = useQuery({

@@ -192,3 +192,11 @@ export async function updatePreferenceParsedJson(
     });
     return jsonOrThrow<Preference>(res);
 }
+
+export async function initializeCourses(semester: string, year: number): Promise<Course[]> {
+    const res = await fetch(
+        `${API}/courses/initialize/?semester=${encodeURIComponent(semester)}&year=${year}`,
+        { method: 'POST' },
+    );
+    return jsonOrThrow<Course[]>(res);
+}
