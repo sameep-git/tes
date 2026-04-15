@@ -24,9 +24,9 @@ def _get_lambda_client():
     global _lambda_client
     if _lambda_client is None:
         # Increase read_timeout so boto3 doesn't drop the connection
-        # before the 5-minute Lambda function finishes.
+        # before the 10-minute Lambda function finishes.
         boto_config = Config(
-            read_timeout=310,
+            read_timeout=610,
             connect_timeout=10,
             retries={'max_attempts': 0}
         )

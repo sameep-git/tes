@@ -342,7 +342,7 @@ def solve(payload: Dict[str, Any]) -> Dict[str, Any]:
 
         # ── 5. Solve ──────────────────────────────────────────────────────────
         solver = cp_model.CpSolver()
-        solver.parameters.max_time_in_seconds = 270.0  # 270s gives 30s buffer before Lambda's 5-min timeout
+        solver.parameters.max_time_in_seconds = 540.0  # 540s gives 60s buffer before Lambda's 10-min timeout
         solver.parameters.num_search_workers = 2       # Lambda with 3GB RAM gets ~2 vCPUs
 
         status = solver.Solve(model)
