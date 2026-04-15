@@ -180,17 +180,24 @@ async def chat_endpoint(request: Request):
                     tool_func = TOOL_REGISTRY.get(tool_name)
                     if tool_func:
                         try:
-                            # Run in background thread to avoid blocking the event loop
-                            # Yield a keep-alive ping every 15 seconds to prevent idle connection drops
-                            fut = asyncio.to_thread(tool_func, **tool_args)
-                            task = asyncio.create_task(fut)
-                            
+                            # Run the (potentially blocking) tool in a background
+                            # thread so the event loop stays free to yield
+                            # keep-alive pings every 10 seconds.  This prevents
+                            # DigitalOcean / nginx / the browser from dropping
+                            # the SSE connection during long-running tools like
+                            # the solver (which waits for Lambda for up to 5 min).
+                            task = asyncio.ensure_future(
+                                asyncio.to_thread(tool_func, **tool_args)
+                            )
                             while not task.done():
-                                done, pending = await asyncio.wait([task], timeout=15.0)
-                                if not done:
+                                try:
+                                    await asyncio.wait_for(
+                                        asyncio.shield(task), timeout=10.0
+                                    )
+                                except asyncio.TimeoutError:
+                                    # Task still running — send a heartbeat
                                     yield f"data: {json.dumps({'type': 'ping'})}\n\n"
-                            
-                            # Retrieve the result after task finishes
+
                             tool_result = task.result()
                         except Exception as e:
                             tool_result = json.dumps({"error": str(e)})
