@@ -248,6 +248,24 @@ def solve(payload: Dict[str, Any]) -> Dict[str, Any]:
         _log(f"[SOLVER] All constraints added. Assumptions: {len(assumptions_map)}")
 
         # ── 4. SOFT CONSTRAINTS (Objective) ──────────────────────────────────
+        #
+        # Weight guide (higher magnitude = stronger influence):
+        #   +500  preferred course       — professors should teach what they asked for
+        #   +100  preferred level        — professors should teach at levels they prefer
+        #   +50   preferred timeslot     — nice-to-have scheduling preference
+        #   -1000 avoid course           — strong signal: do NOT assign this
+        #   -200  avoid timeslot         — strong scheduling avoidance
+        #   -200  avoid day              — strong day avoidance (per day match)
+        #   -20   non-preferred course   — mild penalty for courses the prof didn't request
+        #
+        WEIGHT_PREFERRED_COURSE = 500
+        WEIGHT_PREFERRED_LEVEL = 100
+        WEIGHT_PREFERRED_TIMESLOT = 50
+        WEIGHT_AVOID_COURSE = -1000
+        WEIGHT_AVOID_TIMESLOT = -200
+        WEIGHT_AVOID_DAY = -200
+        WEIGHT_NON_PREFERRED_COURSE = -20  # mild nudge away from unrequested courses
+
         objective_terms = []
 
         course_dict = {c["id"]: c for c in schedulable_courses}
@@ -263,6 +281,11 @@ def solve(payload: Dict[str, Any]) -> Dict[str, Any]:
             avoid_timeslots = pref.get("avoid_timeslots", [])
             avoid_days = pref.get("avoid_days", [])
 
+            if preferred_courses or avoid_courses or preferred_levels:
+                _log(f"[SOLVER] Prefs for {p['name']}: "
+                     f"want={preferred_courses}, avoid={avoid_courses}, "
+                     f"levels={preferred_levels}, avoid_days={avoid_days}")
+
             p_keys = [k for k in assign if k[0] == p["id"]]
 
             for k in p_keys:
@@ -272,21 +295,36 @@ def solve(payload: Dict[str, Any]) -> Dict[str, Any]:
 
                 if c and t:
                     course_key = f"{c['code']} | {c['name']}"
+                    is_preferred = (c["code"] in preferred_courses or
+                                   course_key in preferred_courses)
+                    is_avoided = (c["code"] in avoid_courses or
+                                  course_key in avoid_courses)
 
-                    if c["code"] in preferred_courses or course_key in preferred_courses:
-                        objective_terms.append(var * 10)
-                    if c["code"] in avoid_courses or course_key in avoid_courses:
-                        objective_terms.append(var * -100)
+                    # Course preferences
+                    if is_preferred:
+                        objective_terms.append(var * WEIGHT_PREFERRED_COURSE)
+                    elif is_avoided:
+                        objective_terms.append(var * WEIGHT_AVOID_COURSE)
+                    elif preferred_courses:
+                        # Professor expressed preferences but this course isn't one of them
+                        objective_terms.append(var * WEIGHT_NON_PREFERRED_COURSE)
+
+                    # Level preferences
                     if c["level"] in preferred_levels:
-                        objective_terms.append(var * 5)
+                        objective_terms.append(var * WEIGHT_PREFERRED_LEVEL)
+
+                    # Timeslot preferences
                     if t["label"] in preferred_timeslots:
-                        objective_terms.append(var * 5)
+                        objective_terms.append(var * WEIGHT_PREFERRED_TIMESLOT)
                     if t["label"] in avoid_timeslots:
-                        objective_terms.append(var * -50)
+                        objective_terms.append(var * WEIGHT_AVOID_TIMESLOT)
+
+                    # Day avoidance
                     for day in avoid_days:
                         if day in t["days"]:
-                            objective_terms.append(var * -50)
+                            objective_terms.append(var * WEIGHT_AVOID_DAY)
 
+        _log(f"[SOLVER] Objective terms: {len(objective_terms)}")
         if objective_terms:
             model.Maximize(sum(objective_terms))
 
