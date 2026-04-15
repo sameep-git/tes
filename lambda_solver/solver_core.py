@@ -43,6 +43,9 @@ def solve(payload: Dict[str, Any]) -> Dict[str, Any]:
         preferences: Dict[str, dict] = payload.get("preferences", {})
         constraints_cfg: dict = payload.get("constraints", {})
 
+        print(f"[SOLVER] Input: {len(professors)} professors, {len(courses)} courses, "
+              f"{len(timeslots)} timeslots, {len(rooms)} rooms")
+
         if not professors or not courses or not timeslots or not rooms:
             return {"status": "error", "message": "Missing basic data (professors, courses, timeslots, or rooms)."}
 
@@ -51,14 +54,33 @@ def solve(payload: Dict[str, Any]) -> Dict[str, Any]:
 
         # ── 2. Decision variables (sparsified: only create if room fits course) ─
         assign: Dict[tuple, Any] = {}
+        skipped_no_room = []
         for p in professors:
             for c in courses:
+                eligible_rooms = [r for r in rooms if r["capacity"] >= c["capacity"]]
+                if not eligible_rooms:
+                    if c["code"] not in [s["code"] for s in skipped_no_room]:
+                        skipped_no_room.append({"code": c["code"], "name": c["name"], "capacity": c["capacity"]})
+                    continue
                 for t in timeslots:
-                    for r in rooms:
-                        if r["capacity"] >= c["capacity"]:
-                            assign[(p["id"], c["id"], t["id"], r["id"])] = model.NewBoolVar(
-                                f"assign_p{p['id']}_c{c['id']}_t{t['id']}_r{r['id']}"
-                            )
+                    for r in eligible_rooms:
+                        assign[(p["id"], c["id"], t["id"], r["id"])] = model.NewBoolVar(
+                            f"assign_p{p['id']}_c{c['id']}_t{t['id']}_r{r['id']}"
+                        )
+
+        print(f"[SOLVER] Created {len(assign)} decision variables")
+        if skipped_no_room:
+            print(f"[SOLVER] WARNING: {len(skipped_no_room)} courses have no room with enough capacity:")
+            for s in skipped_no_room:
+                print(f"  - {s['code']} ({s['name']}): needs capacity {s['capacity']}, "
+                      f"max room capacity is {max(r['capacity'] for r in rooms)}")
+
+        if len(assign) == 0:
+            return {
+                "status": "error",
+                "message": "No valid assignment variables could be created. "
+                           "Check that room capacities are >= course capacities.",
+            }
 
         assumptions_map: Dict[int, str] = {}
 
@@ -88,6 +110,11 @@ def solve(payload: Dict[str, Any]) -> Dict[str, Any]:
         for c in courses:
             vars_c = [assign[k] for k in assign if k[1] == c["id"]]
 
+            if not vars_c:
+                print(f"[SOLVER] WARNING: Course {c['code']} has 0 assignment variables (no eligible rooms). "
+                      f"Skipping min/max constraints for it.")
+                continue
+
             b_min = model.NewBoolVar(f"assump_B_min_c{c['id']}")
             model.Add(sum(vars_c) >= c["min_sections"]).OnlyEnforceIf(b_min)
             model.AddAssumption(b_min)
@@ -113,10 +140,15 @@ def solve(payload: Dict[str, Any]) -> Dict[str, Any]:
                 model.Add(sum(vars_p) == 0).OnlyEnforceIf(b)
                 model.AddAssumption(b)
                 assumptions_map[b.Index()] = f"Professor {p['name']} is on leave and must teach 0 sections."
+                print(f"[SOLVER] Professor {p['name']} is on leave → 0 sections")
             else:
                 db_limit = p["fall_count"] if semester.lower() == "fall" else p["spring_count"]
                 email_limit = pref.get("max_load")
                 limit = min(db_limit, email_limit) if email_limit is not None else db_limit
+
+                if limit <= 0:
+                    print(f"[SOLVER] WARNING: Professor {p['name']} has load limit {limit} "
+                          f"(db={db_limit}, email={email_limit})")
 
                 b = model.NewBoolVar(f"assump_C_load_p{p['id']}")
                 model.Add(sum(vars_p) <= limit).OnlyEnforceIf(b)
@@ -126,6 +158,8 @@ def solve(payload: Dict[str, Any]) -> Dict[str, Any]:
         # E. Timeslot capacity
         for t in timeslots:
             vars_t = [assign[k] for k in assign if k[2] == t["id"]]
+            if not vars_t:
+                continue
             b = model.NewBoolVar(f"assump_E_cap_t{t['id']}")
             model.Add(sum(vars_t) <= t["max_classes"]).OnlyEnforceIf(b)
             model.AddAssumption(b)
@@ -145,12 +179,15 @@ def solve(payload: Dict[str, Any]) -> Dict[str, Any]:
                 prime_vars = [assign[k] for k in assign if k[2] in prime_slot_ids]
                 all_vars = list(assign.values())
 
-                b = model.NewBoolVar("assump_F_prime")
-                model.Add(sum(prime_vars) * 100 <= max_pct * sum(all_vars)).OnlyEnforceIf(b)
-                model.AddAssumption(b)
-                assumptions_map[b.Index()] = (
-                    f"Prime-time cap exceeded: max {max_pct}% of sections allowed between {pt_start} and {pt_end}."
-                )
+                if all_vars:
+                    b = model.NewBoolVar("assump_F_prime")
+                    model.Add(sum(prime_vars) * 100 <= max_pct * sum(all_vars)).OnlyEnforceIf(b)
+                    model.AddAssumption(b)
+                    assumptions_map[b.Index()] = (
+                        f"Prime-time cap exceeded: max {max_pct}% of sections allowed between {pt_start} and {pt_end}."
+                    )
+                    print(f"[SOLVER] Prime-time constraint: {len(prime_vars)} prime vars, "
+                          f"{len(all_vars)} total vars, max {max_pct}%")
 
         # G. Blocked timeslots
         blocked_cfg = constraints_cfg.get("blocked_timeslots")
@@ -208,12 +245,25 @@ def solve(payload: Dict[str, Any]) -> Dict[str, Any]:
         if objective_terms:
             model.Maximize(sum(objective_terms))
 
+        # ── 4.5 Validate model before solving ────────────────────────────────
+        validation_error = model.Validate()
+        if validation_error:
+            print(f"[SOLVER] MODEL VALIDATION FAILED: {validation_error}")
+            return {
+                "status": "error",
+                "message": f"The CP-SAT model is invalid: {validation_error}",
+            }
+
+        print(f"[SOLVER] Model validated OK. Starting solver...")
+
         # ── 5. Solve ──────────────────────────────────────────────────────────
         solver = cp_model.CpSolver()
         solver.parameters.max_time_in_seconds = 270.0  # 270s gives 30s buffer before Lambda's 5-min timeout
         solver.parameters.num_search_workers = 2       # Lambda with 3GB RAM gets ~2 vCPUs
 
         status = solver.Solve(model)
+        print(f"[SOLVER] Solve complete. Status: {solver.StatusName(status)}, "
+              f"Wall time: {solver.WallTime():.1f}s")
 
         if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             assignments = []
@@ -226,6 +276,7 @@ def solve(payload: Dict[str, Any]) -> Dict[str, Any]:
                         "timeslot_id": t_id,
                         "room_id": r_id,
                     })
+            print(f"[SOLVER] SUCCESS: {len(assignments)} assignments, score={solver.ObjectiveValue()}")
             return {
                 "status": "success",
                 "solver_status": solver.StatusName(status),
@@ -239,12 +290,14 @@ def solve(payload: Dict[str, Any]) -> Dict[str, Any]:
             if conflict_indices:
                 bottlenecks = [assumptions_map[idx] for idx in conflict_indices if idx in assumptions_map]
                 unique_bottlenecks = list(dict.fromkeys(bottlenecks))
+                print(f"[SOLVER] INFEASIBLE. Bottlenecks: {unique_bottlenecks}")
                 return {
                     "status": "infeasible",
                     "message": "The solver failed because the following constraints conflict with each other:",
                     "bottlenecks": unique_bottlenecks,
                 }
             else:
+                print("[SOLVER] INFEASIBLE. No unsatisfiable core identified.")
                 return {
                     "status": "infeasible",
                     "message": (
@@ -253,11 +306,17 @@ def solve(payload: Dict[str, Any]) -> Dict[str, Any]:
                     ),
                 }
         else:
+            response_info = solver.ResponseStats()
+            print(f"[SOLVER] Non-success status: {solver.StatusName(status)}")
+            print(f"[SOLVER] Response stats: {response_info}")
             return {
                 "status": "infeasible",
                 "solver_status": solver.StatusName(status),
-                "message": f"Solver stopped with status: {solver.StatusName(status)}",
+                "message": f"Solver stopped with status: {solver.StatusName(status)}. {response_info}",
             }
 
     except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[SOLVER] EXCEPTION: {tb}")
         return {"status": "error", "message": str(e)}
