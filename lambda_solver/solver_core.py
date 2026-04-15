@@ -130,7 +130,7 @@ def solve(payload: Dict[str, Any]) -> Dict[str, Any]:
             for t in timeslots:
                 vars_pt = [assign[k] for k in assign if k[0] == p["id"] and k[2] == t["id"]]
                 if vars_pt:
-                    model.AddAtMostOne(vars_pt).OnlyEnforceIf(b_physics)
+                    model.Add(sum(vars_pt) <= 1).OnlyEnforceIf(b_physics)
         model.AddAssumption(b_physics)
         assumptions_map[b_physics.Index()] = "A professor cannot teach multiple courses at the exact same time."
 
@@ -145,7 +145,7 @@ def solve(payload: Dict[str, Any]) -> Dict[str, Any]:
             for t in timeslots:
                 vars_rt = [assign[k] for k in assign if k[2] == t["id"] and k[3] == rid]
                 if vars_rt:
-                    model.AddAtMostOne(vars_rt).OnlyEnforceIf(b_room_double)
+                    model.Add(sum(vars_rt) <= 1).OnlyEnforceIf(b_room_double)
         model.AddAssumption(b_room_double)
         assumptions_map[b_room_double.Index()] = "A room cannot be double-booked at the exact same time."
         _log(f"[SOLVER] Room pool: {len(all_room_ids)} unique rooms in use")
