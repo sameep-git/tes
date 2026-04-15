@@ -9,6 +9,7 @@ import os
 from typing import Any, Dict
 
 import boto3
+from botocore.config import Config
 
 from .database import SessionLocal
 from .models import Professor, Course, TimeSlot, Schedule, Section, Preference, Room, Constraint
@@ -22,9 +23,17 @@ def _get_lambda_client():
     """Lazily build the boto3 Lambda client so unit tests can patch it easily."""
     global _lambda_client
     if _lambda_client is None:
+        # Increase read_timeout so boto3 doesn't drop the connection
+        # before the 5-minute Lambda function finishes.
+        boto_config = Config(
+            read_timeout=310,
+            connect_timeout=10,
+            retries={'max_attempts': 0}
+        )
         _lambda_client = boto3.client(
             "lambda",
             region_name=os.environ.get("AWS_REGION", "us-east-1"),
+            config=boto_config
         )
     return _lambda_client
 
