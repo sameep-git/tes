@@ -1,0 +1,263 @@
+"""
+Pure solver logic — no database access, no ORM imports.
+
+Receives a plain dict payload, runs OR-Tools CP-SAT, and returns a plain dict result.
+This module is deployed to AWS Lambda inside the tes-solver container image.
+"""
+from typing import Any, Dict, List
+
+from ortools.sat.python import cp_model
+
+
+def solve(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Run the CP-SAT solver against the provided data payload.
+
+    Expected payload keys:
+        semester        str
+        year            int
+        professors      list[{id, name, fall_count, spring_count}]
+        courses         list[{id, code, name, level, capacity, min_sections, max_sections}]
+        timeslots       list[{id, label, days, start_time, end_time, max_classes}]
+        rooms           list[{id, capacity}]
+        preferences     dict[str(prof_id), {on_leave, max_load, preferred_courses,
+                                            avoid_courses, preferred_levels,
+                                            preferred_timeslots, avoid_timeslots, avoid_days}]
+        constraints     {prime_time?: {start_time, end_time, max_percentage},
+                         blocked_timeslots?: {labels: [str]}}
+
+    Returns on success:
+        {status: "success", solver_status: str, score: float, wall_time: float,
+         assignments: [{professor_id, course_id, timeslot_id, room_id}]}
+    Returns on infeasible:
+        {status: "infeasible", message: str, bottlenecks?: [str]}
+    Returns on error:
+        {status: "error", message: str}
+    """
+    try:
+        semester: str = payload["semester"]
+        professors: List[dict] = payload["professors"]
+        courses: List[dict] = payload["courses"]
+        timeslots: List[dict] = payload["timeslots"]
+        rooms: List[dict] = payload["rooms"]
+        preferences: Dict[str, dict] = payload.get("preferences", {})
+        constraints_cfg: dict = payload.get("constraints", {})
+
+        if not professors or not courses or not timeslots or not rooms:
+            return {"status": "error", "message": "Missing basic data (professors, courses, timeslots, or rooms)."}
+
+        # ── 1. Build model ────────────────────────────────────────────────────
+        model = cp_model.CpModel()
+
+        # ── 2. Decision variables (sparsified: only create if room fits course) ─
+        assign: Dict[tuple, Any] = {}
+        for p in professors:
+            for c in courses:
+                for t in timeslots:
+                    for r in rooms:
+                        if r["capacity"] >= c["capacity"]:
+                            assign[(p["id"], c["id"], t["id"], r["id"])] = model.NewBoolVar(
+                                f"assign_p{p['id']}_c{c['id']}_t{t['id']}_r{r['id']}"
+                            )
+
+        assumptions_map: Dict[int, str] = {}
+
+        # ── 3. HARD CONSTRAINTS ───────────────────────────────────────────────
+
+        # A. A professor cannot teach more than one course at the exact same time
+        b_physics = model.NewBoolVar("assump_A_physics")
+        for p in professors:
+            for t in timeslots:
+                vars_pt = [assign[k] for k in assign if k[0] == p["id"] and k[2] == t["id"]]
+                if vars_pt:
+                    model.AddAtMostOne(vars_pt).OnlyEnforceIf(b_physics)
+        model.AddAssumption(b_physics)
+        assumptions_map[b_physics.Index()] = "A professor cannot teach multiple courses at the exact same time."
+
+        # A2. A room cannot have more than one course at the exact same time
+        b_room_double = model.NewBoolVar("assump_A2_room_double")
+        for r in rooms:
+            for t in timeslots:
+                vars_rt = [assign[k] for k in assign if k[2] == t["id"] and k[3] == r["id"]]
+                if vars_rt:
+                    model.AddAtMostOne(vars_rt).OnlyEnforceIf(b_room_double)
+        model.AddAssumption(b_room_double)
+        assumptions_map[b_room_double.Index()] = "A room cannot be double-booked at the exact same time."
+
+        # B. Minimum/Maximum course sections
+        for c in courses:
+            vars_c = [assign[k] for k in assign if k[1] == c["id"]]
+
+            b_min = model.NewBoolVar(f"assump_B_min_c{c['id']}")
+            model.Add(sum(vars_c) >= c["min_sections"]).OnlyEnforceIf(b_min)
+            model.AddAssumption(b_min)
+            assumptions_map[b_min.Index()] = (
+                f"Course {c['code']} ({c['name']}) requires a minimum of {c['min_sections']} sections."
+            )
+
+            b_max = model.NewBoolVar(f"assump_B_max_c{c['id']}")
+            model.Add(sum(vars_c) <= c["max_sections"]).OnlyEnforceIf(b_max)
+            model.AddAssumption(b_max)
+            assumptions_map[b_max.Index()] = (
+                f"Course {c['code']} ({c['name']}) is capped at a maximum of {c['max_sections']} sections."
+            )
+
+        # C. Professor load limits & sabbatical
+        for p in professors:
+            pref = preferences.get(str(p["id"]), {})
+            on_leave = pref.get("on_leave", False)
+            vars_p = [assign[k] for k in assign if k[0] == p["id"]]
+
+            if on_leave:
+                b = model.NewBoolVar(f"assump_C_leave_p{p['id']}")
+                model.Add(sum(vars_p) == 0).OnlyEnforceIf(b)
+                model.AddAssumption(b)
+                assumptions_map[b.Index()] = f"Professor {p['name']} is on leave and must teach 0 sections."
+            else:
+                db_limit = p["fall_count"] if semester.lower() == "fall" else p["spring_count"]
+                email_limit = pref.get("max_load")
+                limit = min(db_limit, email_limit) if email_limit is not None else db_limit
+
+                b = model.NewBoolVar(f"assump_C_load_p{p['id']}")
+                model.Add(sum(vars_p) <= limit).OnlyEnforceIf(b)
+                model.AddAssumption(b)
+                assumptions_map[b.Index()] = f"Professor {p['name']} cannot teach more than {limit} sections."
+
+        # E. Timeslot capacity
+        for t in timeslots:
+            vars_t = [assign[k] for k in assign if k[2] == t["id"]]
+            b = model.NewBoolVar(f"assump_E_cap_t{t['id']}")
+            model.Add(sum(vars_t) <= t["max_classes"]).OnlyEnforceIf(b)
+            model.AddAssumption(b)
+            assumptions_map[b.Index()] = (
+                f"Timeslot {t['label']} cannot exceed its capacity of {t['max_classes']} concurrent classes."
+            )
+
+        # F. Prime-time cap
+        prime_cfg = constraints_cfg.get("prime_time")
+        if prime_cfg:
+            pt_start = prime_cfg.get("start_time", "09:00")
+            pt_end = prime_cfg.get("end_time", "14:00")
+            max_pct = prime_cfg.get("max_percentage", 60)
+
+            prime_slot_ids = {t["id"] for t in timeslots if pt_start <= t["start_time"] < pt_end}
+            if prime_slot_ids:
+                prime_vars = [assign[k] for k in assign if k[2] in prime_slot_ids]
+                all_vars = list(assign.values())
+
+                b = model.NewBoolVar("assump_F_prime")
+                model.Add(sum(prime_vars) * 100 <= max_pct * sum(all_vars)).OnlyEnforceIf(b)
+                model.AddAssumption(b)
+                assumptions_map[b.Index()] = (
+                    f"Prime-time cap exceeded: max {max_pct}% of sections allowed between {pt_start} and {pt_end}."
+                )
+
+        # G. Blocked timeslots
+        blocked_cfg = constraints_cfg.get("blocked_timeslots")
+        if blocked_cfg:
+            blocked_labels = set(blocked_cfg.get("labels", []))
+            blocked_ids = {t["id"]: t["label"] for t in timeslots if t["label"] in blocked_labels}
+            for tid, label in blocked_ids.items():
+                b = model.NewBoolVar(f"assump_G_blk_t{tid}")
+                vars_blocked = [assign[k] for k in assign if k[2] == tid]
+                for var in vars_blocked:
+                    model.Add(var == 0).OnlyEnforceIf(b)
+                model.AddAssumption(b)
+                assumptions_map[b.Index()] = f"Timeslot {label} is marked as blocked by administration."
+
+        # ── 4. SOFT CONSTRAINTS (Objective) ──────────────────────────────────
+        objective_terms = []
+
+        course_dict = {c["id"]: c for c in courses}
+        timeslot_dict = {t["id"]: t for t in timeslots}
+
+        for p in professors:
+            pref = preferences.get(str(p["id"]), {})
+
+            preferred_courses = pref.get("preferred_courses", [])
+            avoid_courses = pref.get("avoid_courses", [])
+            preferred_levels = pref.get("preferred_levels", [])
+            preferred_timeslots = pref.get("preferred_timeslots", [])
+            avoid_timeslots = pref.get("avoid_timeslots", [])
+            avoid_days = pref.get("avoid_days", [])
+
+            p_keys = [k for k in assign if k[0] == p["id"]]
+
+            for k in p_keys:
+                var = assign[k]
+                c = course_dict.get(k[1])
+                t = timeslot_dict.get(k[2])
+
+                if c and t:
+                    course_key = f"{c['code']} | {c['name']}"
+
+                    if c["code"] in preferred_courses or course_key in preferred_courses:
+                        objective_terms.append(var * 10)
+                    if c["code"] in avoid_courses or course_key in avoid_courses:
+                        objective_terms.append(var * -100)
+                    if c["level"] in preferred_levels:
+                        objective_terms.append(var * 5)
+                    if t["label"] in preferred_timeslots:
+                        objective_terms.append(var * 5)
+                    if t["label"] in avoid_timeslots:
+                        objective_terms.append(var * -50)
+                    for day in avoid_days:
+                        if day in t["days"]:
+                            objective_terms.append(var * -50)
+
+        if objective_terms:
+            model.Maximize(sum(objective_terms))
+
+        # ── 5. Solve ──────────────────────────────────────────────────────────
+        solver = cp_model.CpSolver()
+        solver.parameters.max_time_in_seconds = 270.0  # 270s gives 30s buffer before Lambda's 5-min timeout
+        solver.parameters.num_search_workers = 2       # Lambda with 3GB RAM gets ~2 vCPUs
+
+        status = solver.Solve(model)
+
+        if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+            assignments = []
+            for k, var in assign.items():
+                if solver.Value(var) == 1:
+                    p_id, c_id, t_id, r_id = k
+                    assignments.append({
+                        "professor_id": p_id,
+                        "course_id": c_id,
+                        "timeslot_id": t_id,
+                        "room_id": r_id,
+                    })
+            return {
+                "status": "success",
+                "solver_status": solver.StatusName(status),
+                "score": solver.ObjectiveValue(),
+                "wall_time": solver.WallTime(),
+                "assignments": assignments,
+            }
+
+        elif status == cp_model.INFEASIBLE:
+            conflict_indices = solver.SufficientAssumptionsForInfeasibility()
+            if conflict_indices:
+                bottlenecks = [assumptions_map[idx] for idx in conflict_indices if idx in assumptions_map]
+                unique_bottlenecks = list(dict.fromkeys(bottlenecks))
+                return {
+                    "status": "infeasible",
+                    "message": "The solver failed because the following constraints conflict with each other:",
+                    "bottlenecks": unique_bottlenecks,
+                }
+            else:
+                return {
+                    "status": "infeasible",
+                    "message": (
+                        "The solver could not find any possible schedule that satisfies all hard constraints, "
+                        "and it could not identify a specific unsatisfiable core to explain the infeasibility."
+                    ),
+                }
+        else:
+            return {
+                "status": "infeasible",
+                "solver_status": solver.StatusName(status),
+                "message": f"Solver stopped with status: {solver.StatusName(status)}",
+            }
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

@@ -12,7 +12,7 @@ apscheduler
 python-jose
 bcrypt
 openpyxl
-ortools
+boto3
 google-auth
 google-auth-oauthlib
 google-api-python-client
