@@ -85,12 +85,12 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
             b_min = model.NewBoolVar(f"assump_B_min_c{c.id}")
             model.Add(sum(vars_c) >= c.min_sections).OnlyEnforceIf(b_min)
             model.AddAssumption(b_min)
-            assumptions_map[b_min.Index()] = f"Course {c.code} requires a minimum of {c.min_sections} sections."
+            assumptions_map[b_min.Index()] = f"Course {c.code} ({c.name}) requires a minimum of {c.min_sections} sections."
             
             b_max = model.NewBoolVar(f"assump_B_max_c{c.id}")
             model.Add(sum(vars_c) <= c.max_sections).OnlyEnforceIf(b_max)
             model.AddAssumption(b_max)
-            assumptions_map[b_max.Index()] = f"Course {c.code} is capped at a maximum of {c.max_sections} sections."
+            assumptions_map[b_max.Index()] = f"Course {c.code} ({c.name}) is capped at a maximum of {c.max_sections} sections."
 
         # C. Professor Load Limits & Sabbatical
         for p in professors:
@@ -113,41 +113,6 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
                 model.Add(sum(vars_p) <= limit).OnlyEnforceIf(b)
                 model.AddAssumption(b)
                 assumptions_map[b.Index()] = f"Professor {p.name} cannot teach more than {limit} sections."
-
-        # D. Core Requirements Constraint
-        ssc_course_ids = {c.id for c in courses if c.core_ssc}
-        ht_course_ids = {c.id for c in courses if c.core_ht}
-        ga_course_ids = {c.id for c in courses if c.core_ga}
-        wem_course_ids = {c.id for c in courses if c.core_wem}
-
-        ssc_sections = [assign[k] for k in assign if k[1] in ssc_course_ids]
-        ht_sections = [assign[k] for k in assign if k[1] in ht_course_ids]
-        ga_sections = [assign[k] for k in assign if k[1] in ga_course_ids]
-        wem_sections = [assign[k] for k in assign if k[1] in wem_course_ids]
-        
-        if ssc_sections: 
-            b = model.NewBoolVar("assump_D_ssc")
-            model.Add(sum(ssc_sections) >= 1).OnlyEnforceIf(b)
-            model.AddAssumption(b)
-            assumptions_map[b.Index()] = "At least one Social Science Core (SSC) course must be scheduled."
-            
-        if ht_sections: 
-            b = model.NewBoolVar("assump_D_ht")
-            model.Add(sum(ht_sections) >= 1).OnlyEnforceIf(b)
-            model.AddAssumption(b)
-            assumptions_map[b.Index()] = "At least one Historical Traditions (HT) core course must be scheduled."
-            
-        if ga_sections: 
-            b = model.NewBoolVar("assump_D_ga")
-            model.Add(sum(ga_sections) >= 1).OnlyEnforceIf(b)
-            model.AddAssumption(b)
-            assumptions_map[b.Index()] = "At least one Global Awareness (GA) core course must be scheduled."
-            
-        if wem_sections: 
-            b = model.NewBoolVar("assump_D_wem")
-            model.Add(sum(wem_sections) >= 1).OnlyEnforceIf(b)
-            model.AddAssumption(b)
-            assumptions_map[b.Index()] = "At least one Written Expression (WEM) core course must be scheduled."
 
         # E. Timeslot Capacity
         for t in timeslots:
@@ -241,7 +206,9 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
 
         # 6. Run the Solver
         solver = cp_model.CpSolver()
-        solver.parameters.max_time_in_seconds = 30.0 
+        solver.parameters.max_time_in_seconds = 300.0  # Increased to 5 minutes
+        solver.parameters.num_search_workers = 1  # Restrict to 1 thread to prevent 100% CPU lockup
+
         
         status = solver.Solve(model)
 
