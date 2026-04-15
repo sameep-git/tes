@@ -180,7 +180,18 @@ async def chat_endpoint(request: Request):
                     tool_func = TOOL_REGISTRY.get(tool_name)
                     if tool_func:
                         try:
-                            tool_result = tool_func(**tool_args)
+                            # Run in background thread to avoid blocking the event loop
+                            # Yield a keep-alive ping every 15 seconds to prevent idle connection drops
+                            fut = asyncio.to_thread(tool_func, **tool_args)
+                            task = asyncio.create_task(fut)
+                            
+                            while not task.done():
+                                done, pending = await asyncio.wait([task], timeout=15.0)
+                                if not done:
+                                    yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+                            
+                            # Retrieve the result after task finishes
+                            tool_result = task.result()
                         except Exception as e:
                             tool_result = json.dumps({"error": str(e)})
                     else:
