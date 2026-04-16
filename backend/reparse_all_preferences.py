@@ -12,11 +12,9 @@ Usage (from inside the backend container or local venv):
 """
 import os, sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from database import SessionLocal
-from models import Preference
-from ai import extract_preferences_from_email
+from backend.database import SessionLocal
+from backend.models import Preference
+from backend.ai import extract_preferences_from_email
 from sqlalchemy.orm.attributes import flag_modified
 
 
