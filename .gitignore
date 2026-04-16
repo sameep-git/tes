@@ -10,6 +10,7 @@ scheduler.db
 *.pdf
 credentials.json
 token.json
+vertex_key.json
 docs/
 data/
 
