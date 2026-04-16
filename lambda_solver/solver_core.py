@@ -76,7 +76,7 @@ def solve(payload: Dict[str, Any]) -> Dict[str, Any]:
         # Use up to MAX_ROOMS_PER_COURSE smallest eligible rooms to keep the
         # variable space manageable while giving the solver flexibility for
         # courses of similar sizes.
-        MAX_ROOMS_PER_COURSE = 3
+        MAX_ROOMS_PER_COURSE = 8
         rooms_sorted = sorted(rooms, key=lambda r: r["capacity"])
         course_rooms: Dict[int, List[dict]] = {}   # course_id → list of eligible rooms
         skipped_no_room: List[dict] = []
@@ -124,17 +124,51 @@ def solve(payload: Dict[str, Any]) -> Dict[str, Any]:
 
         # ── 3. HARD CONSTRAINTS ───────────────────────────────────────────────
 
-        # A. A professor cannot teach more than one course at the exact same time
+        # ── Pre-compute overlapping timeslot pairs ────────────────────────────
+        # Two timeslots conflict if they share at least one day AND their time
+        # ranges overlap (start1 < end2 AND start2 < end1).
+        def _time_to_min(t_str: str) -> int:
+            """Convert 'HH:MM' to minutes since midnight."""
+            parts = t_str.split(":")
+            return int(parts[0]) * 60 + int(parts[1])
+
+        def _timeslots_overlap(t1: dict, t2: dict) -> bool:
+            """Return True if two timeslots share a day and their times intersect."""
+            days1 = set(t1["days"])
+            days2 = set(t2["days"])
+            if not days1 & days2:
+                return False
+            s1, e1 = _time_to_min(t1["start_time"]), _time_to_min(t1["end_time"])
+            s2, e2 = _time_to_min(t2["start_time"]), _time_to_min(t2["end_time"])
+            return s1 < e2 and s2 < e1
+
+        # Build a set of conflicting timeslot ID pairs (includes self-pairs)
+        conflict_pairs: set = set()
+        for i, t1 in enumerate(timeslots):
+            for t2 in timeslots[i:]:
+                if _timeslots_overlap(t1, t2):
+                    conflict_pairs.add((t1["id"], t2["id"]))
+
+        _log(f"[SOLVER] Computed {len(conflict_pairs)} overlapping timeslot pairs "
+             f"(out of {len(timeslots)} timeslots)")
+
+        # A. A professor cannot teach two courses at overlapping times
         b_physics = model.NewBoolVar("assump_A_physics")
         for p in active_professors:
-            for t in timeslots:
-                vars_pt = [assign[k] for k in assign if k[0] == p["id"] and k[2] == t["id"]]
+            for (tid1, tid2) in conflict_pairs:
+                if tid1 == tid2:
+                    # Same timeslot — original logic
+                    vars_pt = [assign[k] for k in assign if k[0] == p["id"] and k[2] == tid1]
+                else:
+                    # Different but overlapping timeslots
+                    vars_pt = [assign[k] for k in assign
+                               if k[0] == p["id"] and k[2] in (tid1, tid2)]
                 if vars_pt:
                     model.Add(sum(vars_pt) <= 1).OnlyEnforceIf(b_physics)
         model.AddAssumption(b_physics)
-        assumptions_map[b_physics.Index()] = "A professor cannot teach multiple courses at the exact same time."
+        assumptions_map[b_physics.Index()] = "A professor cannot teach multiple courses at overlapping times."
 
-        # A2. A room cannot have more than one course at the exact same time
+        # A2. A room cannot have more than one course at overlapping times
         b_room_double = model.NewBoolVar("assump_A2_room_double")
         all_room_ids = set()
         for room_list in course_rooms.values():
@@ -142,12 +176,16 @@ def solve(payload: Dict[str, Any]) -> Dict[str, Any]:
                 all_room_ids.add(r["id"])
 
         for rid in all_room_ids:
-            for t in timeslots:
-                vars_rt = [assign[k] for k in assign if k[2] == t["id"] and k[3] == rid]
+            for (tid1, tid2) in conflict_pairs:
+                if tid1 == tid2:
+                    vars_rt = [assign[k] for k in assign if k[2] == tid1 and k[3] == rid]
+                else:
+                    vars_rt = [assign[k] for k in assign
+                               if k[2] in (tid1, tid2) and k[3] == rid]
                 if vars_rt:
                     model.Add(sum(vars_rt) <= 1).OnlyEnforceIf(b_room_double)
         model.AddAssumption(b_room_double)
-        assumptions_map[b_room_double.Index()] = "A room cannot be double-booked at the exact same time."
+        assumptions_map[b_room_double.Index()] = "A room cannot be double-booked at overlapping times."
         _log(f"[SOLVER] Room pool: {len(all_room_ids)} unique rooms in use")
 
         # B. Minimum/Maximum course sections

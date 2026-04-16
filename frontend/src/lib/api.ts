@@ -29,6 +29,7 @@ export interface Course {
     core_ht: boolean;
     core_ga: boolean;
     core_wem: boolean;
+    is_timeless: boolean;
 }
 
 export interface Section {

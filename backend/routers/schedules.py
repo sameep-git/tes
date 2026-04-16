@@ -24,6 +24,8 @@ def get_schedules(
         .joinedload(models.Section.professor),
         joinedload(models.Schedule.sections)
         .joinedload(models.Section.timeslot),
+        joinedload(models.Schedule.sections)
+        .joinedload(models.Section.room),
     )
     if semester:
         q = q.filter(func.lower(models.Schedule.semester) == semester.lower())

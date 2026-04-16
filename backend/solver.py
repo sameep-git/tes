@@ -62,6 +62,7 @@ def gather_solver_input(semester: str, year: int) -> Dict[str, Any]:
                 Preference.professor_id == p.id,
                 Preference.semester == semester,
                 Preference.year == year,
+                Preference.admin_approved == True,
             ).first()
             preferences[str(p.id)] = pref.parsed_json if (pref and pref.parsed_json) else {}
 

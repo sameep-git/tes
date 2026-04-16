@@ -72,6 +72,7 @@ def initialize_courses(
             core_ht=t.core_ht,
             core_ga=t.core_ga,
             core_wem=t.core_wem,
+            is_timeless=t.is_timeless,
         )
         for t in templates
     ]

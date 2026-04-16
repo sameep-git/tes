@@ -60,12 +60,13 @@ def extract_preferences_from_email(email_text: str) -> ParsedPreference:
     db = SessionLocal()
     try:
         # 1. Get valid courses and timeslots so Gemini knows what to match against
-        courses = db.query(Course).all()
+        from .models import CourseTemplate
+        templates = db.query(CourseTemplate).all()
         timeslots = [str(t.label) for t in db.query(TimeSlot).filter(TimeSlot.active == True).all()]
         # Build a rich course listing: code + name so the model can resolve either
         course_listing = "\n".join(
             f"  - {c.code} | {c.name} | Level {c.level}"
-            for c in courses
+            for c in templates
         )
     finally:
         db.close()
