@@ -8,7 +8,7 @@
 #   aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com
 #   docker push <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/tes-solver:latest
 
-FROM public.ecr.aws/lambda/python:3.11
+FROM amazon/aws-lambda-python:3.11
 
 # Install Python dependencies (OR-Tools ships pre-built manylinux wheels — no compiler needed)
 COPY requirements.txt .
