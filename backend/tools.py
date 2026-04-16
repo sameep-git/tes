@@ -448,9 +448,13 @@ def create_course(
     core_ssc: bool = False,
     core_ht: bool = False,
     core_ga: bool = False,
-    core_wem: bool = False
+    core_wem: bool = False,
+    is_timeless: bool = False,
 ) -> str:
-    """Create a new course in the system for a specific semester and year."""
+    """Create a new course in the system for a specific semester and year.
+    Set is_timeless=True for courses with no scheduled meeting time (e.g. Internship, Honors Seminar).
+    Timeless courses are pre-assigned from professor preferences — the solver skips them.
+    """
     db = SessionLocal()
     try:
         existing = db.query(Course).filter(
@@ -465,7 +469,8 @@ def create_course(
         course = Course(
             code=code, name=name, semester=semester, year=year, level=level, credits=credits,
             min_sections=min_sections, max_sections=max_sections,
-            core_ssc=core_ssc, core_ht=core_ht, core_ga=core_ga, core_wem=core_wem
+            core_ssc=core_ssc, core_ht=core_ht, core_ga=core_ga, core_wem=core_wem,
+            is_timeless=is_timeless,
         )
         db.add(course)
         db.commit()
@@ -473,7 +478,8 @@ def create_course(
         return json.dumps({
             "status": "success", "id": course.id,
             "code": course.code, "name": course.name,
-            "semester": course.semester, "year": course.year
+            "semester": course.semester, "year": course.year,
+            "is_timeless": course.is_timeless,
         })
     except Exception as e:
         db.rollback()
@@ -495,9 +501,13 @@ def update_course(
     core_ssc: Optional[bool] = None,
     core_ht: Optional[bool] = None,
     core_ga: Optional[bool] = None,
-    core_wem: Optional[bool] = None
+    core_wem: Optional[bool] = None,
+    is_timeless: Optional[bool] = None,
 ) -> str:
-    """Update editable fields on a course. Only provided fields are changed."""
+    """Update editable fields on a course. Only provided fields are changed.
+    Use is_timeless=True to mark courses like Internship / Honors Seminar that
+    have no scheduled meeting time and should be pre-assigned from professor preferences.
+    """
     db = SessionLocal()
     try:
         course = db.query(Course).filter(Course.id == course_id).first()
@@ -528,13 +538,16 @@ def update_course(
             course.core_ga = core_ga
         if core_wem is not None:
             course.core_wem = core_wem
+        if is_timeless is not None:
+            course.is_timeless = is_timeless
 
         db.commit()
         db.refresh(course)
         return json.dumps({
             "status": "success", "id": course.id,
             "code": course.code, "name": course.name,
-            "semester": course.semester, "year": course.year
+            "semester": course.semester, "year": course.year,
+            "is_timeless": course.is_timeless,
         })
     except Exception as e:
         db.rollback()

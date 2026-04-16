@@ -249,22 +249,21 @@ def solve(payload: Dict[str, Any]) -> Dict[str, Any]:
 
         # ── 4. SOFT CONSTRAINTS (Objective) ──────────────────────────────────
         #
-        # Weight guide (higher magnitude = stronger influence):
-        #   +500  preferred course       — professors should teach what they asked for
-        #   +100  preferred level        — professors should teach at levels they prefer
-        #   +50   preferred timeslot     — nice-to-have scheduling preference
-        #   -1000 avoid course           — strong signal: do NOT assign this
-        #   -200  avoid timeslot         — strong scheduling avoidance
-        #   -200  avoid day              — strong day avoidance (per day match)
-        #   -20   non-preferred course   — mild penalty for courses the prof didn't request
+        # Weight guide:
+        #   +500  preferred course           — prof should teach what they asked for
+        #   +200  timeslot match (bonus)      — exactly the timeslot they paired with a course
+        #   +100  preferred level             — level preference beyond specific courses
+        #   -1000 avoid course                — strong: do NOT assign this
+        #   -200  avoid timeslot / avoid day  — scheduling avoidance
+        #   -20   non-preferred course        — mild nudge away from unrequested courses
         #
         WEIGHT_PREFERRED_COURSE = 500
+        WEIGHT_TIMESLOT_MATCH = 200
         WEIGHT_PREFERRED_LEVEL = 100
-        WEIGHT_PREFERRED_TIMESLOT = 50
         WEIGHT_AVOID_COURSE = -1000
         WEIGHT_AVOID_TIMESLOT = -200
         WEIGHT_AVOID_DAY = -200
-        WEIGHT_NON_PREFERRED_COURSE = -20  # mild nudge away from unrequested courses
+        WEIGHT_NON_PREFERRED_COURSE = -20
 
         objective_terms = []
 
@@ -274,17 +273,43 @@ def solve(payload: Dict[str, Any]) -> Dict[str, Any]:
         for p in active_professors:
             pref = preferences.get(str(p["id"]), {})
 
-            preferred_courses = pref.get("preferred_courses", [])
             avoid_courses = pref.get("avoid_courses", [])
             preferred_levels = pref.get("preferred_levels", [])
-            preferred_timeslots = pref.get("preferred_timeslots", [])
             avoid_timeslots = pref.get("avoid_timeslots", [])
             avoid_days = pref.get("avoid_days", [])
 
-            if preferred_courses or avoid_courses or preferred_levels:
-                _log(f"[SOLVER] Prefs for {p['name']}: "
-                     f"want={preferred_courses}, avoid={avoid_courses}, "
-                     f"levels={preferred_levels}, avoid_days={avoid_days}")
+            # ── Determine source format ───────────────────────────────────────
+            course_assignments = pref.get("course_assignments", [])  # new format
+            preferred_courses_legacy = pref.get("preferred_courses", [])  # old format
+
+            using_new_format = bool(course_assignments)
+
+            if using_new_format:
+                # Build lookup: course_key -> list of desired timeslot labels (may be null)
+                # Multiple entries for same course = multiple desired sections
+                wanted_course_keys = [a.get("course", "") for a in course_assignments]
+                # For timeslot bonus: map course_key -> set of desired timeslots
+                wanted_timeslots_by_course: Dict[str, set] = {}
+                for a in course_assignments:
+                    ck = a.get("course", "")
+                    ts = a.get("timeslot")
+                    if ck and ts:
+                        wanted_timeslots_by_course.setdefault(ck, set()).add(ts)
+
+                if pref and (course_assignments or avoid_courses or preferred_levels):
+                    _log(f"[SOLVER] Prefs for {p['name']} (new format): "
+                         f"want={wanted_course_keys}, avoid={avoid_courses}, "
+                         f"levels={preferred_levels}, avoid_days={avoid_days}")
+            else:
+                # Legacy format: flat preferred_courses list
+                wanted_course_keys = preferred_courses_legacy
+                wanted_timeslots_by_course = {}
+                preferred_timeslots_legacy = pref.get("preferred_timeslots", [])
+
+                if pref and (preferred_courses_legacy or avoid_courses or preferred_levels):
+                    _log(f"[SOLVER] Prefs for {p['name']} (legacy): "
+                         f"want={preferred_courses_legacy}, avoid={avoid_courses}, "
+                         f"levels={preferred_levels}, avoid_days={avoid_days}")
 
             p_keys = [k for k in assign if k[0] == p["id"]]
 
@@ -293,36 +318,45 @@ def solve(payload: Dict[str, Any]) -> Dict[str, Any]:
                 c = course_dict.get(k[1])
                 t = timeslot_dict.get(k[2])
 
-                if c and t:
-                    course_key = f"{c['code']} | {c['name']}"
-                    is_preferred = (c["code"] in preferred_courses or
-                                   course_key in preferred_courses)
-                    is_avoided = (c["code"] in avoid_courses or
-                                  course_key in avoid_courses)
+                if not c or not t:
+                    continue
 
-                    # Course preferences
-                    if is_preferred:
-                        objective_terms.append(var * WEIGHT_PREFERRED_COURSE)
-                    elif is_avoided:
-                        objective_terms.append(var * WEIGHT_AVOID_COURSE)
-                    elif preferred_courses:
-                        # Professor expressed preferences but this course isn't one of them
-                        objective_terms.append(var * WEIGHT_NON_PREFERRED_COURSE)
+                course_key = f"{c['code']} | {c['name']}"
+                is_preferred = (c["code"] in wanted_course_keys or
+                                course_key in wanted_course_keys)
+                is_avoided = (c["code"] in avoid_courses or
+                              course_key in avoid_courses)
 
-                    # Level preferences
-                    if c["level"] in preferred_levels:
-                        objective_terms.append(var * WEIGHT_PREFERRED_LEVEL)
+                # Course preference
+                if is_preferred:
+                    objective_terms.append(var * WEIGHT_PREFERRED_COURSE)
+                    # Bonus: timeslot matches what prof paired with this course
+                    desired_slots = wanted_timeslots_by_course.get(course_key, set())
+                    if t["label"] in desired_slots:
+                        objective_terms.append(var * WEIGHT_TIMESLOT_MATCH)
+                elif is_avoided:
+                    objective_terms.append(var * WEIGHT_AVOID_COURSE)
+                elif wanted_course_keys:
+                    # Prof has expressed preferences but this course isn't one of them
+                    objective_terms.append(var * WEIGHT_NON_PREFERRED_COURSE)
 
-                    # Timeslot preferences
-                    if t["label"] in preferred_timeslots:
-                        objective_terms.append(var * WEIGHT_PREFERRED_TIMESLOT)
-                    if t["label"] in avoid_timeslots:
-                        objective_terms.append(var * WEIGHT_AVOID_TIMESLOT)
+                # Level preference
+                if c["level"] in preferred_levels:
+                    objective_terms.append(var * WEIGHT_PREFERRED_LEVEL)
 
-                    # Day avoidance
-                    for day in avoid_days:
-                        if day in t["days"]:
-                            objective_terms.append(var * WEIGHT_AVOID_DAY)
+                # Timeslot avoidance
+                if t["label"] in avoid_timeslots:
+                    objective_terms.append(var * WEIGHT_AVOID_TIMESLOT)
+
+                # Legacy: timeslot preference (old format only)
+                if not using_new_format:
+                    if t["label"] in preferred_timeslots_legacy:
+                        objective_terms.append(var * 50)
+
+                # Day avoidance
+                for day in avoid_days:
+                    if day in t["days"]:
+                        objective_terms.append(var * WEIGHT_AVOID_DAY)
 
         _log(f"[SOLVER] Objective terms: {len(objective_terms)}")
         if objective_terms:

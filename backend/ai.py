@@ -16,18 +16,26 @@ client = genai.Client(
     location=os.getenv("VERTEX_LOCATION", "us-central1"),
 )
 
+class CourseAssignment(BaseModel):
+    course: str               # Full course key from catalog: "ECON 10223 | Intro Microeconomics"
+    timeslot: Optional[str] = None  # "MWF 9:00am" if prof specified a time, else null
+
 class ParsedPreference(BaseModel):
     # Load
     requested_load: Optional[int] = None        # soft: "I'd like 2 sections"
     max_load: Optional[int] = None              # hard: "I cannot do more than 2"
 
-    # Course preferences
-    preferred_courses: List[str] = []           # specific codes: ["ECON 30223"]
+    # Course assignments (replaces preferred_courses + preferred_timeslots)
+    # Each entry = one desired section. Same course can appear multiple times.
+    # e.g. [{course: "ECON 10223 | Intro Micro", timeslot: "MWF 9:00am"},
+    #        {course: "ECON 10223 | Intro Micro", timeslot: null},
+    #        {course: "ECON 40990 | Internship",  timeslot: null}]
+    course_assignments: List[CourseAssignment] = []
+
     avoid_courses: List[str] = []
     preferred_levels: List[int] = []            # [30000, 40000] for upper-division only
 
     # Time preferences — normalized against DB timeslot labels
-    preferred_timeslots: List[str] = []         # matched to TimeSlot.label values
     avoid_timeslots: List[str] = []
     avoid_days: List[str] = []                  # ["M", "T", "W", "R", "F"] — day-level avoidance
 
@@ -38,8 +46,8 @@ class ParsedPreference(BaseModel):
     on_leave: bool = False                      # triggers professor.active = False immediately
 
     # Overflow
-    notes_for_admin: Optional[str] = None       # anything Gemini can't map to a field
-    confidence_score: float                     # 0.0-1.0, Gemini self-reports how sure it is
+    notes_for_admin: Optional[str] = None       # anything the AI can't map to a field
+    confidence_score: float                     # 0.0-1.0, AI self-reports how sure it is
 
 def extract_preferences_from_email(email_text: str) -> ParsedPreference:
     """
@@ -81,28 +89,40 @@ def extract_preferences_from_email(email_text: str) -> ParsedPreference:
     
     ===== EXTRACTION RULES =====
     
-    COURSES (most important — read carefully):
-    1. Extract course preferences into the `preferred_courses` or `avoid_courses` fields using the exact COURSE KEY from the catalog listing above. The course key MUST uniquely identify the course and should match the catalog line exactly, e.g. "ECON 30223 | Intermediate Microeconomics" or "ECON 40970 | Growth".
-    2. Professors may refer to courses by name ("Intermediate Micro"), partial name ("Micro"), level ("upper division", "300-level"), or code. Match intelligently against the catalog above.
-    3. IMPORTANT: The catalog contains duplicate base codes for special topics (e.g. multiple ECON 40970s). You MUST carefully read the course name they provide and pick the exact code + name match from the catalog, and output that full course key (e.g. "ECON 40970 | Growth") in `preferred_courses` / `avoid_courses`, not just the bare code. If they omit the name for a special topic, add a note in `notes_for_admin` and pick the closest match or leave it out if completely ambiguous.
-    4. If they say "my usual courses" or reference prior semesters without specifics, set `notes_for_admin` with the quote and lower confidence.
-    5. If a name only partially matches, pick the closest course key AND note ambiguity in `notes_for_admin`.
-    6. NEVER invent a course code or course key not in the catalog. If you cannot match, put the unmatched text in `notes_for_admin`.
-    6. `preferred_levels` should contain numeric level values like 10000, 30000, 40000 (matching the Level field in the catalog).
-    
-    TIMESLOTS:
-    7. Map all time requests strictly to Valid TimeSlot Labels. Do not invent labels.
-    8. "Morning" → earlier timeslots in the list. "Afternoon" → later timeslots. Pick the closest matches.
-    9. Section numbers in the email (e.g. "section 002", "section 050") correspond to timeslot labels — use them to narrow down the match where possible.
-    
+    COURSE ASSIGNMENTS (most important — read carefully):
+    1. Build `course_assignments` as a list of objects, one per DESIRED SECTION.
+       Each object has: {{"course": "<FULL COURSE KEY>", "timeslot": "<LABEL or null>"}}
+    2. If a professor wants MULTIPLE SECTIONS of the same course, add a SEPARATE ENTRY for each section.
+       Example: "I'd like to teach 2 sections of Intro Micro" →
+         [{{"course": "ECON 10223 | Intro Microeconomics", "timeslot": null}},
+          {{"course": "ECON 10223 | Intro Microeconomics", "timeslot": null}}]
+    3. Use the EXACT COURSE KEY from the catalog ("CODE | Name"). Never invent codes.
+    4. If they specify a time for a course ("Intro Micro in the morning"), match to a Valid Timeslot Label.
+       If no time mentioned, set timeslot to null.
+    5. The catalog contains duplicate base codes for special topics (e.g. multiple ECON 40970s).
+       Pick the exact code+name match. If ambiguous, add a note in `notes_for_admin`.
+    6. If they say "my usual courses" without specifics, set `notes_for_admin` and lower confidence.
+    7. NEVER put a course in both `course_assignments` and `avoid_courses`.
+
+    AVOID COURSES:
+    8. List courses the professor explicitly does NOT want in `avoid_courses` using full course keys.
+
+    LEVELS:
+    9. `preferred_levels` should contain numeric level values like 10000, 30000, 40000.
+       Only add these if the professor expresses a level preference BEYOND their specific course requests.
+
+    TIMESLOT AVOIDANCE:
+    10. Map time avoidance to Valid TimeSlot Labels in `avoid_timeslots`.
+    11. Day-level avoidance (e.g. "no Fridays") goes in `avoid_days` as single letters.
+
     LOAD:
-    10. `requested_load` = how many sections they want (e.g. "I'd like to teach 2 courses" → 2).
-    11. `max_load` = the maximum they can handle (e.g. "I can do at most 3" → 3).
+    12. `requested_load` = how many sections they want total.
+    13. `max_load` = the maximum they can handle.
     
     GENERAL:
-    12. If a preference is ambiguous or can't be cleanly mapped, add it verbatim to `notes_for_admin` and lower `confidence_score`.
-    13. `confidence_score` MUST be a float between 0.0 and 1.0. 1.0 = perfectly clear email with exact codes. 0.5 or below = email is vague or contradictory.
-    14. If the professor says they are on leave or sabbatical, set `on_leave: true`.
+    14. If a preference is ambiguous, add it verbatim to `notes_for_admin` and lower `confidence_score`.
+    15. `confidence_score` MUST be 0.0-1.0. 1.0 = perfectly clear. 0.5 or below = vague/contradictory.
+    16. If the professor says they are on leave or sabbatical, set `on_leave: true`.
     
     ===== PROFESSOR'S EMAIL =====
     \"\"\"
