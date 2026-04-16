@@ -53,7 +53,11 @@ FRIENDLY_TOOL_NAMES = {
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
-client = genai.Client() if os.getenv("GEMINI_API_KEY") else None
+client = genai.Client(
+    vertexai=True,
+    project=os.getenv("VERTEX_PROJECT_ID"),
+    location=os.getenv("VERTEX_LOCATION", "us-central1"),
+)
 
 # -------------------------------------------------------------------------
 # System Instruction with Guardrails
@@ -119,7 +123,7 @@ async def chat_endpoint(request: Request):
     """
     if not client:
         return StreamingResponse(
-            iter(["data: " + json.dumps({"type": "error", "content": "GEMINI_API_KEY missing"}) + "\n\n"]),
+            iter(["data: " + json.dumps({"type": "error", "content": "Vertex AI credentials not configured on server."}) + "\n\n"]),
             media_type="text/event-stream"
         )
 

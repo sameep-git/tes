@@ -6,7 +6,9 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/vertex_key.json
+      - VERTEX_PROJECT_ID=${VERTEX_PROJECT_ID:-tes-ai-493313}
+      - VERTEX_LOCATION=${VERTEX_LOCATION:-us-central1}
       - DATABASE_URL=sqlite:////data/scheduler.db
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
       - TES_ADMIN_TOKEN=${TES_ADMIN_TOKEN}
@@ -18,6 +20,7 @@ services:
       - db_data:/data
       - ./credentials.json:/app/credentials.json:ro
       - ./token.json:/app/token.json
+      - ./vertex_key.json:/app/vertex_key.json:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]

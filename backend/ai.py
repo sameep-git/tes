@@ -10,7 +10,11 @@ from .models import Course, TimeSlot
 
 load_dotenv()
 
-client = genai.Client() if os.getenv("GEMINI_API_KEY") else None
+client = genai.Client(
+    vertexai=True,
+    project=os.getenv("VERTEX_PROJECT_ID"),
+    location=os.getenv("VERTEX_LOCATION", "us-central1"),
+)
 
 class ParsedPreference(BaseModel):
     # Load
@@ -43,7 +47,7 @@ def extract_preferences_from_email(email_text: str) -> ParsedPreference:
     to provide as context, and asks Gemini to extract a ParsedPreference object.
     """
     if not client:
-        raise ValueError("GEMINI_API_KEY not found in environment.")
+        raise ValueError("Vertex AI credentials not configured. Set GOOGLE_APPLICATION_CREDENTIALS, VERTEX_PROJECT_ID and VERTEX_LOCATION.")
 
     db = SessionLocal()
     try:
