@@ -7,11 +7,12 @@ as callable tools.
 """
 
 import json
+from collections import Counter, defaultdict
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from .database import SessionLocal
-from .models import Professor, Course, TimeSlot, Preference, Section
+from .models import Professor, Course, TimeSlot, Preference, Section, Room
 from .email_service import poll_unread_replies, send_preference_email
 from .ai import extract_preferences_from_email
 from .solver import run_solver
@@ -87,6 +88,95 @@ def get_unreplied_professors(year: int, semester: str) -> str:
 
 # Confidence threshold for auto-approval (configurable)
 AUTO_APPROVE_CONFIDENCE_THRESHOLD = 0.85
+
+
+def _course_key(course: Course) -> str:
+    return f"{course.code} | {course.name}"
+
+
+def _term_load_limit(prof: Professor, semester: str) -> int:
+    return prof.fall_count if semester.lower() == "fall" else prof.spring_count
+
+
+def _latest_preference_record(
+    db,
+    prof_id: int,
+    semester: str,
+    year: int,
+    approved_only: bool = False,
+):
+    query = db.query(Preference).filter(
+        Preference.professor_id == prof_id,
+        Preference.semester == semester,
+        Preference.year == year,
+    )
+    if approved_only:
+        query = query.filter(Preference.admin_approved == True)
+    return query.order_by(Preference.received_at.desc()).first()
+
+
+def _build_course_lookup(courses: list[Course]) -> dict[str, str]:
+    lookup: dict[str, str] = {}
+    code_to_keys: dict[str, set[str]] = {}
+
+    for course in courses:
+        key = _course_key(course)
+        lookup[key] = key
+        code_to_keys.setdefault(course.code, set()).add(key)
+
+    for code, keys in code_to_keys.items():
+        if len(keys) == 1:
+            lookup[code] = next(iter(keys))
+
+    return lookup
+
+
+def _normalize_preference_data(
+    prof: Professor,
+    parsed_json: Optional[dict[str, Any]],
+    course_lookup: dict[str, str],
+    semester: str,
+) -> dict[str, Any]:
+    data = parsed_json or {}
+    assignments = data.get("course_assignments", []) or []
+    preferred_courses_legacy = data.get("preferred_courses", []) or []
+
+    requested_course_counts: Counter = Counter()
+
+    if assignments:
+        for entry in assignments:
+            course_name = entry.get("course", "") if isinstance(entry, dict) else str(entry)
+            canonical_course = course_lookup.get(course_name)
+            if canonical_course:
+                requested_course_counts[canonical_course] += 1
+    else:
+        for course_name in preferred_courses_legacy:
+            canonical_course = course_lookup.get(course_name)
+            if canonical_course:
+                requested_course_counts[canonical_course] += 1
+
+    db_limit = _term_load_limit(prof, semester)
+    max_load = data.get("max_load")
+    hard_cap = min(db_limit, max_load) if max_load is not None else db_limit
+    hard_cap = max(0, int(hard_cap))
+
+    requested_load = data.get("requested_load")
+    requested_sections_total = sum(requested_course_counts.values())
+
+    if requested_load is not None:
+        target_load = max(0, min(int(requested_load), hard_cap))
+    elif requested_sections_total > 0:
+        target_load = min(requested_sections_total, hard_cap)
+    else:
+        target_load = hard_cap
+
+    return {
+        "on_leave": bool(data.get("on_leave", False)),
+        "hard_cap": hard_cap,
+        "target_load": target_load,
+        "requested_sections_total": requested_sections_total,
+        "requested_course_counts": requested_course_counts,
+    }
 
 
 def trigger_poll_unread_replies(server_mode: bool = False) -> str:
@@ -591,24 +681,35 @@ def run_preflight_checks(semester: str, year: int) -> str:
     be resolved before the solver can run.
 
     Checks:
-      1. Capacity: sum(prof.fall_count/spring_count) >= sum(course.min_sections)
-      2. Missing profs: any active professors without a preference record
-      3. Unapproved prefs: any preference records with admin_approved = False
+      1. Every active professor has a current approved preference for the term
+      2. Available load capacity from approved preferences covers course demand
+      3. Timed courses have at least one eligible room
+      4. Timeless requests are internally consistent with course caps
+      5. Professors do not request more sections than their hard cap allows
     """
     semester = semester.capitalize() if semester else semester
     db = SessionLocal()
-    def get_load(p: Professor, semester: str) -> int:
-        return p.fall_count if semester.lower() == "fall" else p.spring_count
 
     try:
         blockers = []
-
-        # 1. Capacity check
         profs = db.query(Professor).filter(Professor.active == True).all()
         courses = db.query(Course).filter(Course.semester == semester, Course.year == year).all()
+        rooms = db.query(Room).all()
+        active_timeslots = db.query(TimeSlot).filter(TimeSlot.active == True).count()
 
-        total_capacity = sum(get_load(p, semester) for p in profs)
+        course_lookup = _build_course_lookup(courses)
+        max_room_capacity = max((r.capacity for r in rooms), default=0)
         total_demand = sum(c.min_sections for c in courses)
+        timed_courses = [c for c in courses if not c.is_timeless]
+        timeless_courses = [c for c in courses if c.is_timeless]
+
+        total_capacity = 0
+        available_professor_count = 0
+        on_leave_names: list[str] = []
+        missing = []
+        stale_unapproved = []
+        overrequested = []
+        timeless_requested_counts: Counter = Counter()
 
         if len(courses) == 0:
             blockers.append({
@@ -617,52 +718,123 @@ def run_preflight_checks(semester: str, year: int) -> str:
                            "Clone from course templates or create courses before running the solver."
             })
 
-        if total_capacity < total_demand:
-            blockers.append({
-                "type": "capacity",
-                "message": f"Insufficient capacity: {len(profs)} active professors can teach "
-                           f"{total_capacity} sections total, but {len(courses)} courses require "
-                           f"at least {total_demand} sections."
-            })
+        for prof in profs:
+            latest_pref = _latest_preference_record(db, prof.id, semester, year, approved_only=False)
+            if not latest_pref:
+                missing.append(prof)
+                continue
 
-        # 2. Missing professors (active profs with no preference for this term)
-        subquery = db.query(Preference.professor_id).filter(
-            Preference.year == year, Preference.semester == semester
-        ).scalar_subquery()
+            if not latest_pref.admin_approved:
+                stale_unapproved.append({
+                    "professor_id": prof.id,
+                    "professor_name": prof.name,
+                    "preference_id": latest_pref.id,
+                })
+                continue
 
-        missing = db.query(Professor).filter(
-            Professor.active == True,
-            Professor.id.notin_(subquery)
-        ).all()
+            normalized = _normalize_preference_data(
+                prof=prof,
+                parsed_json=latest_pref.parsed_json,
+                course_lookup=course_lookup,
+                semester=semester,
+            )
+
+            if normalized["requested_sections_total"] > normalized["hard_cap"]:
+                overrequested.append({
+                    "professor_id": prof.id,
+                    "professor_name": prof.name,
+                    "requested_sections": normalized["requested_sections_total"],
+                    "hard_cap": normalized["hard_cap"],
+                })
+
+            if normalized["on_leave"]:
+                on_leave_names.append(prof.name)
+                continue
+
+            available_professor_count += 1
+            total_capacity += normalized["hard_cap"]
+
+            for course_key, count in normalized["requested_course_counts"].items():
+                timeless_requested_counts[course_key] += count
 
         if missing:
-            names = [p.name for p in missing]
             blockers.append({
                 "type": "missing_preferences",
                 "message": f"{len(missing)} active professor(s) have not submitted preferences: "
-                           f"{', '.join(names)}",
+                           f"{', '.join(p.name for p in missing)}",
                 "professor_ids": [p.id for p in missing]
             })
 
-        # 3. Unapproved preferences
-        unapproved = db.query(Preference).filter(
-            Preference.semester == semester,
-            Preference.year == year,
-            Preference.admin_approved == False
-        ).all()
-
-        if unapproved:
-            prof_ids = [u.professor_id for u in unapproved]
-            prof_names = []
-            for pid in prof_ids:
-                p = db.query(Professor).filter(Professor.id == pid).first()
-                prof_names.append(p.name if p else f"Prof #{pid}")
-
+        if stale_unapproved:
             blockers.append({
                 "type": "unapproved_preferences",
-                "message": f"{len(unapproved)} preference(s) pending admin approval: "
-                           f"{', '.join(prof_names)}",
-                "preference_ids": [u.id for u in unapproved]
+                "message": f"{len(stale_unapproved)} active professor(s) have a newer unapproved preference: "
+                           f"{', '.join(item['professor_name'] for item in stale_unapproved)}",
+                "preference_ids": [item["preference_id"] for item in stale_unapproved]
+            })
+
+        if timed_courses and active_timeslots == 0:
+            blockers.append({
+                "type": "no_timeslots",
+                "message": f"{len(timed_courses)} timed course(s) exist for {semester} {year}, but there are no active timeslots."
+            })
+
+        if timed_courses and not rooms:
+            blockers.append({
+                "type": "no_rooms",
+                "message": f"{len(timed_courses)} timed course(s) exist for {semester} {year}, but there are no rooms configured."
+            })
+
+        no_room_courses = [c for c in timed_courses if c.capacity > max_room_capacity]
+        if no_room_courses:
+            blockers.append({
+                "type": "room_capacity",
+                "message": "Some timed courses have no eligible room capacity: "
+                           + ", ".join(f"{c.code} ({c.name})" for c in no_room_courses),
+                "course_ids": [c.id for c in no_room_courses],
+            })
+
+        if total_capacity < total_demand:
+            blockers.append({
+                "type": "capacity",
+                "message": f"Approved non-leave professors can teach {total_capacity} sections total, "
+                           f"but {len(courses)} courses require at least {total_demand} sections.",
+            })
+
+        if overrequested:
+            blockers.append({
+                "type": "professor_overrequested",
+                "message": "Some approved preferences request more sections than the professor can teach: "
+                           + ", ".join(
+                               f"{item['professor_name']} ({item['requested_sections']} requested, cap {item['hard_cap']})"
+                               for item in overrequested
+                           ),
+                "professor_ids": [item["professor_id"] for item in overrequested],
+            })
+
+        timeless_mismatches = []
+        for course in timeless_courses:
+            key = _course_key(course)
+            requested = timeless_requested_counts.get(key, 0)
+            if requested < course.min_sections or requested > course.max_sections:
+                timeless_mismatches.append({
+                    "course_id": course.id,
+                    "course_name": key,
+                    "requested_sections": requested,
+                    "min_sections": course.min_sections,
+                    "max_sections": course.max_sections,
+                })
+
+        if timeless_mismatches:
+            blockers.append({
+                "type": "timeless_request_mismatch",
+                "message": "Timeless course requests do not match required section counts: "
+                           + ", ".join(
+                               f"{item['course_name']} (requested {item['requested_sections']}, "
+                               f"allowed {item['min_sections']}-{item['max_sections']})"
+                               for item in timeless_mismatches
+                           ),
+                "course_ids": [item["course_id"] for item in timeless_mismatches],
             })
 
         return json.dumps({
@@ -670,10 +842,17 @@ def run_preflight_checks(semester: str, year: int) -> str:
             "blockers": blockers,
             "summary": {
                 "active_professors": len(profs),
+                "available_professors": available_professor_count,
+                "on_leave_professors": len(on_leave_names),
                 "total_courses": len(courses),
+                "timed_courses": len(timed_courses),
+                "timeless_courses": len(timeless_courses),
+                "active_timeslots": active_timeslots,
+                "room_count": len(rooms),
                 "total_capacity": total_capacity,
                 "total_demand": total_demand
-            }
+            },
+            "on_leave_professors": on_leave_names,
         })
     finally:
         db.close()
@@ -882,7 +1061,8 @@ def delete_schedule(schedule_id: int) -> str:
 def get_schedule_stats(schedule_id: int) -> str:
     """
     Return a load distribution summary for a generated schedule:
-    sections per professor, core requirement coverage, and any unassigned sections.
+    sections per professor, requested-vs-assigned diagnostics, core coverage,
+    and any unassigned sections.
     """
     from .models import Schedule
     db = SessionLocal()
@@ -892,27 +1072,120 @@ def get_schedule_stats(schedule_id: int) -> str:
             return json.dumps({"error": f"Schedule {schedule_id} not found."})
 
         sections = db.query(Section).filter(Section.schedule_id == schedule_id).all()
+        courses = db.query(Course).filter(Course.semester == sched.semester, Course.year == sched.year).all()
+        profs = db.query(Professor).all()
+        prof_map = {p.id: p for p in profs}
+        course_map = {c.id: c for c in courses}
+        course_lookup = _build_course_lookup(courses)
 
         # Load per professor
         load: dict = {}
+        timed_load: dict = {}
+        timeless_load: dict = {}
         unassigned = 0
+        assigned_course_counts: dict[int, Counter] = defaultdict(Counter)
+        requested_course_counts_by_prof: dict[int, Counter] = {}
+        hard_cap_by_prof: dict[int, int] = {}
+        target_load_by_prof: dict[int, int] = {}
+
         for sec in sections:
             if sec.professor_id is None:
                 unassigned += 1
                 continue
-            prof = db.query(Professor).filter(Professor.id == sec.professor_id).first()
+            prof = prof_map.get(sec.professor_id)
             name = prof.name if prof else f"Prof #{sec.professor_id}"
             load[name] = load.get(name, 0) + 1
+            course = course_map.get(sec.course_id)
+            if course:
+                assigned_course_counts[sec.professor_id][_course_key(course)] += 1
+                if course.is_timeless:
+                    timeless_load[name] = timeless_load.get(name, 0) + 1
+                else:
+                    timed_load[name] = timed_load.get(name, 0) + 1
 
         # Core coverage
         core_flags = {"SSC": False, "HT": False, "GA": False, "WEM": False}
         for sec in sections:
-            c = db.query(Course).filter(Course.id == sec.course_id).first()
+            c = course_map.get(sec.course_id)
             if c:
                 if c.core_ssc: core_flags["SSC"] = True
                 if c.core_ht:  core_flags["HT"]  = True
                 if c.core_ga:  core_flags["GA"]  = True
                 if c.core_wem: core_flags["WEM"] = True
+
+        prof_ids_in_scope = set(assigned_course_counts.keys())
+        for prof in profs:
+            approved_pref = _latest_preference_record(db, prof.id, sched.semester, sched.year, approved_only=True)
+            if approved_pref:
+                prof_ids_in_scope.add(prof.id)
+
+        for prof_id in prof_ids_in_scope:
+            prof = prof_map.get(prof_id)
+            if not prof:
+                continue
+            pref = _latest_preference_record(db, prof_id, sched.semester, sched.year, approved_only=True)
+            normalized = _normalize_preference_data(
+                prof=prof,
+                parsed_json=pref.parsed_json if pref else None,
+                course_lookup=course_lookup,
+                semester=sched.semester,
+            )
+            requested_course_counts_by_prof[prof_id] = normalized["requested_course_counts"]
+            hard_cap_by_prof[prof_id] = normalized["hard_cap"]
+            target_load_by_prof[prof_id] = normalized["target_load"]
+
+        professor_diagnostics = []
+        for prof_id in sorted(prof_ids_in_scope, key=lambda pid: (prof_map.get(pid).name if prof_map.get(pid) else f"Prof #{pid}")):
+            prof = prof_map.get(prof_id)
+            prof_name = prof.name if prof else f"Prof #{prof_id}"
+            requested_counts = requested_course_counts_by_prof.get(prof_id, Counter())
+            assigned_counts = assigned_course_counts.get(prof_id, Counter())
+            course_keys = sorted(set(requested_counts.keys()) | set(assigned_counts.keys()))
+
+            unmet_counts = {
+                key: max(requested_counts.get(key, 0) - assigned_counts.get(key, 0), 0)
+                for key in course_keys
+                if requested_counts.get(key, 0) - assigned_counts.get(key, 0) > 0
+            }
+            extra_counts = {
+                key: max(assigned_counts.get(key, 0) - requested_counts.get(key, 0), 0)
+                for key in course_keys
+                if assigned_counts.get(key, 0) - requested_counts.get(key, 0) > 0
+            }
+
+            professor_diagnostics.append({
+                "professor_id": prof_id,
+                "professor_name": prof_name,
+                "hard_cap": hard_cap_by_prof.get(prof_id),
+                "target_load": target_load_by_prof.get(prof_id),
+                "assigned_load": load.get(prof_name, 0),
+                "timed_load": timed_load.get(prof_name, 0),
+                "timeless_load": timeless_load.get(prof_name, 0),
+                "requested_course_counts": dict(requested_counts),
+                "assigned_course_counts": dict(assigned_counts),
+                "unmet_course_counts": unmet_counts,
+                "extra_course_counts": extra_counts,
+            })
+
+        requested_by_course = Counter()
+        assigned_by_course = Counter()
+        for requested_counts in requested_course_counts_by_prof.values():
+            requested_by_course.update(requested_counts)
+        for counts in assigned_course_counts.values():
+            assigned_by_course.update(counts)
+
+        course_diagnostics = []
+        for course in sorted(courses, key=lambda c: (c.code, c.name)):
+            key = _course_key(course)
+            course_diagnostics.append({
+                "course_id": course.id,
+                "course_name": key,
+                "is_timeless": course.is_timeless,
+                "min_sections": course.min_sections,
+                "max_sections": course.max_sections,
+                "requested_sections": requested_by_course.get(key, 0),
+                "assigned_sections": assigned_by_course.get(key, 0),
+            })
 
         return json.dumps({
             "schedule_id": schedule_id,
@@ -922,6 +1195,10 @@ def get_schedule_stats(schedule_id: int) -> str:
             "total_sections": len(sections),
             "unassigned_sections": unassigned,
             "load_per_professor": load,
+            "timed_load_per_professor": timed_load,
+            "timeless_load_per_professor": timeless_load,
+            "professor_diagnostics": professor_diagnostics,
+            "course_diagnostics": course_diagnostics,
             "core_coverage": core_flags,
             "solver_log": sched.solver_log,
         })

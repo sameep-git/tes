@@ -1,11 +1,12 @@
 """
-Pure solver logic — no database access, no ORM imports.
+Two-phase solver core.
 
-Receives a plain dict payload, runs OR-Tools CP-SAT, and returns a plain dict result.
-This module is deployed to AWS Lambda inside the tes-solver container image.
+Phase 1 allocates professor/course section counts, including timeless sections.
+Phase 2 places timed sections into timeslots and rooms.
 """
 import traceback
-from typing import Any, Dict, List
+from collections import Counter
+from typing import Any, Dict, List, Tuple
 
 from ortools.sat.python import cp_model
 
@@ -15,30 +16,513 @@ def _log(msg: str):
     print(msg, flush=True)
 
 
+def _course_key(course: dict) -> str:
+    return f"{course['code']} | {course['name']}"
+
+
+def _time_to_min(t_str: str) -> int:
+    parts = t_str.split(":")
+    return int(parts[0]) * 60 + int(parts[1])
+
+
+def _timeslots_overlap(t1: dict, t2: dict) -> bool:
+    days1 = set(t1["days"])
+    days2 = set(t2["days"])
+    if not days1 & days2:
+        return False
+    s1, e1 = _time_to_min(t1["start_time"]), _time_to_min(t1["end_time"])
+    s2, e2 = _time_to_min(t2["start_time"]), _time_to_min(t2["end_time"])
+    return s1 < e2 and s2 < e1
+
+
+def _build_conflict_pairs(timeslots: List[dict]) -> set:
+    conflict_pairs = set()
+    for i, t1 in enumerate(timeslots):
+        for t2 in timeslots[i:]:
+            if _timeslots_overlap(t1, t2):
+                conflict_pairs.add((t1["id"], t2["id"]))
+    return conflict_pairs
+
+
+def _build_course_lookup(courses: List[dict]) -> Dict[str, str]:
+    lookup: Dict[str, str] = {}
+    code_to_keys: Dict[str, set] = {}
+    for course in courses:
+        key = _course_key(course)
+        lookup[key] = key
+        code_to_keys.setdefault(course["code"], set()).add(key)
+
+    for code, keys in code_to_keys.items():
+        if len(keys) == 1:
+            lookup[code] = next(iter(keys))
+
+    return lookup
+
+
+def _normalize_preferences(
+    professors: List[dict],
+    courses: List[dict],
+    preferences: Dict[str, dict],
+    semester: str,
+) -> Dict[int, dict]:
+    course_lookup = _build_course_lookup(courses)
+
+    normalized: Dict[int, dict] = {}
+    for professor in professors:
+        pref = preferences.get(str(professor["id"]), {}) or {}
+        assignments = pref.get("course_assignments", []) or []
+        preferred_courses_legacy = pref.get("preferred_courses", []) or []
+
+        requested_course_counts: Counter = Counter()
+        requested_course_timeslot_counts: Counter = Counter()
+
+        if assignments:
+            for entry in assignments:
+                course_name = entry.get("course", "") if isinstance(entry, dict) else str(entry)
+                canonical_course = course_lookup.get(course_name)
+                if not canonical_course:
+                    continue
+
+                requested_course_counts[canonical_course] += 1
+
+                timeslot_label = entry.get("timeslot") if isinstance(entry, dict) else None
+                if timeslot_label:
+                    requested_course_timeslot_counts[(canonical_course, timeslot_label)] += 1
+        else:
+            for course_name in preferred_courses_legacy:
+                canonical_course = course_lookup.get(course_name)
+                if canonical_course:
+                    requested_course_counts[canonical_course] += 1
+
+        avoid_courses = set()
+        for course_name in pref.get("avoid_courses", []) or []:
+            canonical_course = course_lookup.get(course_name)
+            if canonical_course:
+                avoid_courses.add(canonical_course)
+
+        db_limit = professor["fall_count"] if semester.lower() == "fall" else professor["spring_count"]
+        max_load = pref.get("max_load")
+        hard_cap = min(db_limit, max_load) if max_load is not None else db_limit
+        hard_cap = max(0, int(hard_cap))
+
+        requested_load = pref.get("requested_load")
+        requested_sections_total = sum(requested_course_counts.values())
+
+        if requested_load is not None:
+            target_load = max(0, min(int(requested_load), hard_cap))
+        elif requested_sections_total > 0:
+            target_load = min(requested_sections_total, hard_cap)
+        else:
+            target_load = hard_cap
+
+        normalized[professor["id"]] = {
+            "on_leave": bool(pref.get("on_leave", False)),
+            "hard_cap": hard_cap,
+            "target_load": target_load,
+            "requested_sections_total": requested_sections_total,
+            "requested_course_counts": requested_course_counts,
+            "requested_course_timeslot_counts": requested_course_timeslot_counts,
+            "avoid_courses": avoid_courses,
+            "preferred_levels": set(pref.get("preferred_levels", []) or []),
+            "avoid_timeslots": set(pref.get("avoid_timeslots", []) or []),
+            "avoid_days": set(pref.get("avoid_days", []) or []),
+            "preferred_timeslots_legacy": set(pref.get("preferred_timeslots", []) or []),
+        }
+
+    return normalized
+
+
+def _build_room_options(courses: List[dict], rooms: List[dict]) -> Tuple[Dict[int, List[dict]], List[dict]]:
+    max_rooms_per_course = 8
+    rooms_sorted = sorted(rooms, key=lambda r: r["capacity"])
+    course_rooms: Dict[int, List[dict]] = {}
+    no_room_courses: List[dict] = []
+
+    for course in courses:
+        if course.get("is_timeless"):
+            continue
+
+        eligible = [room for room in rooms_sorted if room["capacity"] >= course["capacity"]]
+        if eligible:
+            course_rooms[course["id"]] = eligible[:max_rooms_per_course]
+        else:
+            no_room_courses.append(course)
+
+    return course_rooms, no_room_courses
+
+
+def _solve_allocation_phase(
+    semester: str,
+    professors: List[dict],
+    courses: List[dict],
+    normalized_prefs: Dict[int, dict],
+) -> Dict[str, Any]:
+    active_professors = [p for p in professors if not normalized_prefs[p["id"]]["on_leave"]]
+    if not active_professors:
+        return {"status": "error", "message": "All professors are on leave. No one available to teach."}
+
+    model = cp_model.CpModel()
+    course_list = list(courses)
+
+    assign_count: Dict[Tuple[int, int], Any] = {}
+    load_vars: Dict[int, Any] = {}
+    objective_terms = []
+
+    weight_match = 1000
+    weight_unmet = -1200
+    weight_extra = -175
+    weight_unrequested = -25
+    weight_avoid_course = -500
+    weight_preferred_level = 40
+    weight_under_target = -325
+    weight_over_target = -80
+
+    for professor in active_professors:
+        p_id = professor["id"]
+        hard_cap = normalized_prefs[p_id]["hard_cap"]
+        requested_course_counts: Counter = normalized_prefs[p_id]["requested_course_counts"]
+        for course in course_list:
+            if course.get("is_timeless"):
+                max_count = requested_course_counts.get(_course_key(course), 0)
+            else:
+                max_count = min(hard_cap, course["max_sections"])
+            assign_count[(p_id, course["id"])] = model.NewIntVar(
+                0,
+                max_count,
+                f"alloc_p{p_id}_c{course['id']}",
+            )
+
+    for course in course_list:
+        course_vars = [assign_count[(p["id"], course["id"])] for p in active_professors]
+        model.Add(sum(course_vars) >= course["min_sections"])
+        model.Add(sum(course_vars) <= course["max_sections"])
+
+    for professor in active_professors:
+        p_id = professor["id"]
+        hard_cap = normalized_prefs[p_id]["hard_cap"]
+        vars_p = [assign_count[(p_id, course["id"])] for course in course_list]
+
+        load_var = model.NewIntVar(0, hard_cap, f"load_p{p_id}")
+        model.Add(load_var == sum(vars_p))
+        model.Add(load_var <= hard_cap)
+        load_vars[p_id] = load_var
+
+        target_load = normalized_prefs[p_id]["target_load"]
+        if target_load > 0:
+            under_target = model.NewIntVar(0, target_load, f"under_target_p{p_id}")
+            over_target = model.NewIntVar(0, hard_cap, f"over_target_p{p_id}")
+            model.Add(under_target >= target_load - load_var)
+            model.Add(over_target >= load_var - target_load)
+            objective_terms.append(under_target * weight_under_target)
+            objective_terms.append(over_target * weight_over_target)
+
+    for professor in active_professors:
+        p_id = professor["id"]
+        pref = normalized_prefs[p_id]
+        requested_course_counts: Counter = pref["requested_course_counts"]
+        has_explicit_course_requests = pref["requested_sections_total"] > 0
+
+        for course in course_list:
+            key = _course_key(course)
+            course_var = assign_count[(p_id, course["id"])]
+            requested_count = requested_course_counts.get(key, 0)
+
+            if requested_count > 0:
+                matched = model.NewIntVar(0, requested_count, f"match_p{p_id}_c{course['id']}")
+                unmet = model.NewIntVar(0, requested_count, f"unmet_p{p_id}_c{course['id']}")
+                extra = model.NewIntVar(0, course["max_sections"], f"extra_p{p_id}_c{course['id']}")
+
+                model.Add(matched <= course_var)
+                model.Add(matched <= requested_count)
+                model.Add(unmet == requested_count - matched)
+                model.Add(extra >= course_var - requested_count)
+
+                objective_terms.append(matched * weight_match)
+                objective_terms.append(unmet * weight_unmet)
+                objective_terms.append(extra * weight_extra)
+            elif has_explicit_course_requests:
+                objective_terms.append(course_var * weight_unrequested)
+
+            if key in pref["avoid_courses"]:
+                objective_terms.append(course_var * weight_avoid_course)
+
+            if course["level"] in pref["preferred_levels"]:
+                objective_terms.append(course_var * weight_preferred_level)
+
+    if objective_terms:
+        model.Maximize(sum(objective_terms))
+
+    solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = 180.0
+    solver.parameters.num_search_workers = 2
+
+    status = solver.Solve(model)
+    _log(
+        f"[SOLVER][ALLOC] Status: {solver.StatusName(status)}, wall time: {solver.WallTime():.1f}s"
+    )
+
+    if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        return {
+            "status": "infeasible",
+            "message": "The allocation phase could not find a feasible professor-course assignment.",
+            "solver_status": solver.StatusName(status),
+        }
+
+    allocation_counts: Dict[Tuple[int, int], int] = {}
+    assignments: List[dict] = []
+    timed_shells: List[dict] = []
+    timeless_sections = 0
+    section_seq = 0
+
+    for professor in active_professors:
+        p_id = professor["id"]
+        for course in course_list:
+            c_id = course["id"]
+            count = solver.Value(assign_count[(p_id, c_id)])
+            if count <= 0:
+                continue
+
+            allocation_counts[(p_id, c_id)] = count
+            for _ in range(count):
+                if course.get("is_timeless"):
+                    assignments.append(
+                        {
+                            "professor_id": p_id,
+                            "course_id": c_id,
+                            "timeslot_id": None,
+                            "room_id": None,
+                        }
+                    )
+                    timeless_sections += 1
+                else:
+                    section_seq += 1
+                    timed_shells.append(
+                        {
+                            "section_id": section_seq,
+                            "professor_id": p_id,
+                            "course_id": c_id,
+                        }
+                    )
+
+    return {
+        "status": "success",
+        "solver_status": solver.StatusName(status),
+        "score": solver.ObjectiveValue(),
+        "wall_time": solver.WallTime(),
+        "assignments": assignments,
+        "timed_shells": timed_shells,
+        "allocation_counts": allocation_counts,
+        "timeless_sections": timeless_sections,
+        "load_by_professor": {p["id"]: solver.Value(load_vars[p["id"]]) for p in active_professors},
+    }
+
+
+def _solve_placement_phase(
+    timed_shells: List[dict],
+    courses: List[dict],
+    timeslots: List[dict],
+    rooms: List[dict],
+    course_rooms: Dict[int, List[dict]],
+    normalized_prefs: Dict[int, dict],
+    constraints_cfg: dict,
+) -> Dict[str, Any]:
+    if not timed_shells:
+        return {
+            "status": "success",
+            "solver_status": "NO_TIMED_SECTIONS",
+            "score": 0.0,
+            "wall_time": 0.0,
+            "assignments": [],
+        }
+
+    course_dict = {course["id"]: course for course in courses}
+    timeslot_dict = {timeslot["id"]: timeslot for timeslot in timeslots}
+    conflict_pairs = _build_conflict_pairs(timeslots)
+    blocked_labels = set((constraints_cfg.get("blocked_timeslots") or {}).get("labels", []))
+    blocked_ids = {t["id"] for t in timeslots if t["label"] in blocked_labels}
+
+    model = cp_model.CpModel()
+    place: Dict[Tuple[int, int, int], Any] = {}
+    shell_ids_by_prof: Dict[int, List[int]] = {}
+    shell_ids_by_prof_course: Dict[Tuple[int, int], List[int]] = {}
+
+    for shell in timed_shells:
+        shell_ids_by_prof.setdefault(shell["professor_id"], []).append(shell["section_id"])
+        shell_ids_by_prof_course.setdefault((shell["professor_id"], shell["course_id"]), []).append(
+            shell["section_id"]
+        )
+
+    for shell in timed_shells:
+        course = course_dict[shell["course_id"]]
+        options = []
+        for timeslot in timeslots:
+            if timeslot["id"] in blocked_ids:
+                continue
+            for room in course_rooms.get(course["id"], []):
+                var = model.NewBoolVar(
+                    f"place_s{shell['section_id']}_t{timeslot['id']}_r{room['id']}"
+                )
+                place[(shell["section_id"], timeslot["id"], room["id"])] = var
+                options.append(var)
+
+        if not options:
+            return {
+                "status": "infeasible",
+                "message": (
+                    f"The placement phase has no feasible timeslot/room options for "
+                    f"{course['code']} ({course['name']})."
+                ),
+            }
+        model.AddExactlyOne(options)
+
+    for p_id, shell_ids in shell_ids_by_prof.items():
+        for tid1, tid2 in conflict_pairs:
+            relevant_tids = {tid1} if tid1 == tid2 else {tid1, tid2}
+            vars_pt = [
+                var for (sid, tid, _rid), var in place.items()
+                if sid in shell_ids and tid in relevant_tids
+            ]
+            if vars_pt:
+                model.Add(sum(vars_pt) <= 1)
+
+    room_ids = {room["id"] for room in rooms}
+    for room_id in room_ids:
+        for tid1, tid2 in conflict_pairs:
+            vars_rt = []
+            if tid1 == tid2:
+                vars_rt.extend(
+                    var for (_sid, tid, rid), var in place.items()
+                    if tid == tid1 and rid == room_id
+                )
+            else:
+                vars_rt.extend(
+                    var for (_sid, tid, rid), var in place.items()
+                    if tid in (tid1, tid2) and rid == room_id
+                )
+            if vars_rt:
+                model.Add(sum(vars_rt) <= 1)
+
+    for timeslot in timeslots:
+        vars_t = [var for (_sid, tid, _rid), var in place.items() if tid == timeslot["id"]]
+        if vars_t:
+            model.Add(sum(vars_t) <= timeslot["max_classes"])
+
+    prime_cfg = constraints_cfg.get("prime_time")
+    if prime_cfg:
+        pt_start = prime_cfg.get("start_time", "09:00")
+        pt_end = prime_cfg.get("end_time", "14:00")
+        max_pct = prime_cfg.get("max_percentage", 60)
+        prime_slot_ids = {t["id"] for t in timeslots if pt_start <= t["start_time"] < pt_end}
+        if prime_slot_ids and timed_shells:
+            prime_sections = model.NewIntVar(0, len(timed_shells), "prime_sections")
+            model.Add(
+                prime_sections
+                == sum(var for (_sid, tid, _rid), var in place.items() if tid in prime_slot_ids)
+            )
+            model.Add(prime_sections * 100 <= max_pct * len(timed_shells))
+
+    objective_terms = []
+    weight_timeslot_match = 220
+    weight_avoid_timeslot = -220
+    weight_avoid_day = -180
+    weight_legacy_preferred_timeslot = 40
+
+    for shell in timed_shells:
+        p_id = shell["professor_id"]
+        course = course_dict[shell["course_id"]]
+        course_key = _course_key(course)
+        pref = normalized_prefs[p_id]
+
+        for (sid, tid, rid), var in place.items():
+            if sid != shell["section_id"]:
+                continue
+
+            timeslot = timeslot_dict[tid]
+            if timeslot["label"] in pref["avoid_timeslots"]:
+                objective_terms.append(var * weight_avoid_timeslot)
+
+            if timeslot["label"] in pref["preferred_timeslots_legacy"]:
+                objective_terms.append(var * weight_legacy_preferred_timeslot)
+
+            for day in pref["avoid_days"]:
+                if day in timeslot["days"]:
+                    objective_terms.append(var * weight_avoid_day)
+
+        requested_pair_count = pref["requested_course_timeslot_counts"]
+        for timeslot in timeslots:
+            requested_count = requested_pair_count.get((course_key, timeslot["label"]), 0)
+            if requested_count <= 0:
+                continue
+
+            shell_ids = shell_ids_by_prof_course.get((p_id, course["id"]), [])
+
+            placed_here = model.NewIntVar(
+                0,
+                len(shell_ids),
+                f"placed_pair_p{p_id}_c{course['id']}_t{timeslot['id']}",
+            )
+            matched_here = model.NewIntVar(
+                0,
+                requested_count,
+                f"matched_pair_p{p_id}_c{course['id']}_t{timeslot['id']}",
+            )
+            vars_here = [
+                var for (sid, tid, _rid), var in place.items()
+                if tid == timeslot["id"]
+                and sid in shell_ids
+            ]
+            model.Add(placed_here == sum(vars_here))
+            model.Add(matched_here <= placed_here)
+            model.Add(matched_here <= requested_count)
+            objective_terms.append(matched_here * weight_timeslot_match)
+
+    if objective_terms:
+        model.Maximize(sum(objective_terms))
+
+    solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = 300.0
+    solver.parameters.num_search_workers = 2
+
+    status = solver.Solve(model)
+    _log(
+        f"[SOLVER][PLACE] Status: {solver.StatusName(status)}, wall time: {solver.WallTime():.1f}s"
+    )
+
+    if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        return {
+            "status": "infeasible",
+            "message": "The placement phase could not fit the allocated timed sections into timeslots and rooms.",
+            "solver_status": solver.StatusName(status),
+        }
+
+    assignments = []
+    for shell in timed_shells:
+        for (sid, tid, rid), var in place.items():
+            if sid == shell["section_id"] and solver.Value(var) == 1:
+                assignments.append(
+                    {
+                        "professor_id": shell["professor_id"],
+                        "course_id": shell["course_id"],
+                        "timeslot_id": tid,
+                        "room_id": rid,
+                    }
+                )
+                break
+
+    return {
+        "status": "success",
+        "solver_status": solver.StatusName(status),
+        "score": solver.ObjectiveValue(),
+        "wall_time": solver.WallTime(),
+        "assignments": assignments,
+    }
+
+
 def solve(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Run the CP-SAT solver against the provided data payload.
-
-    Expected payload keys:
-        semester        str
-        year            int
-        professors      list[{id, name, fall_count, spring_count}]
-        courses         list[{id, code, name, level, capacity, min_sections, max_sections}]
-        timeslots       list[{id, label, days, start_time, end_time, max_classes}]
-        rooms           list[{id, capacity}]
-        preferences     dict[str(prof_id), {on_leave, max_load, preferred_courses,
-                                            avoid_courses, preferred_levels,
-                                            preferred_timeslots, avoid_timeslots, avoid_days}]
-        constraints     {prime_time?: {start_time, end_time, max_percentage},
-                         blocked_timeslots?: {labels: [str]}}
-
-    Returns on success:
-        {status: "success", solver_status: str, score: float, wall_time: float,
-         assignments: [{professor_id, course_id, timeslot_id, room_id}]}
-    Returns on infeasible:
-        {status: "infeasible", message: str, bottlenecks?: [str]}
-    Returns on error:
-        {status: "error", message: str}
+    Run a two-phase solve:
+      1. Allocate professor/course section counts, including timeless sections.
+      2. Place timed sections into timeslots and rooms.
     """
     try:
         semester: str = payload["semester"]
@@ -49,427 +533,74 @@ def solve(payload: Dict[str, Any]) -> Dict[str, Any]:
         preferences: Dict[str, dict] = payload.get("preferences", {})
         constraints_cfg: dict = payload.get("constraints", {})
 
-        _log(f"[SOLVER] Input: {len(professors)} professors, {len(courses)} courses, "
-             f"{len(timeslots)} timeslots, {len(rooms)} rooms")
+        _log(
+            f"[SOLVER] Input: {len(professors)} professors, {len(courses)} courses, "
+            f"{len(timeslots)} timeslots, {len(rooms)} rooms"
+        )
 
-        if not professors or not courses or not timeslots or not rooms:
-            return {"status": "error", "message": "Missing basic data (professors, courses, timeslots, or rooms)."}
+        if not professors or not courses:
+            return {"status": "error", "message": "Missing basic data (professors or courses)."}
 
-        # ── 0. Pre-filter professors: skip those on leave ─────────────────────
-        active_professors = []
-        on_leave_names = []
-        for p in professors:
-            pref = preferences.get(str(p["id"]), {})
-            if pref.get("on_leave", False):
-                on_leave_names.append(p["name"])
-            else:
-                active_professors.append(p)
+        normalized_prefs = _normalize_preferences(professors, courses, preferences, semester)
+        active_professors = [p for p in professors if not normalized_prefs[p["id"]]["on_leave"]]
+        on_leave_names = [p["name"] for p in professors if normalized_prefs[p["id"]]["on_leave"]]
 
         if on_leave_names:
             _log(f"[SOLVER] Professors on leave (excluded): {', '.join(on_leave_names)}")
         _log(f"[SOLVER] Active professors for scheduling: {len(active_professors)}")
 
-        if not active_professors:
-            return {"status": "error", "message": "All professors are on leave. No one available to teach."}
-
-        # ── 0.5 Pre-compute eligible rooms per course ─────────────────────────
-        # Use up to MAX_ROOMS_PER_COURSE smallest eligible rooms to keep the
-        # variable space manageable while giving the solver flexibility for
-        # courses of similar sizes.
-        MAX_ROOMS_PER_COURSE = 8
-        rooms_sorted = sorted(rooms, key=lambda r: r["capacity"])
-        course_rooms: Dict[int, List[dict]] = {}   # course_id → list of eligible rooms
-        skipped_no_room: List[dict] = []
-
-        for c in courses:
-            eligible = [r for r in rooms_sorted if r["capacity"] >= c["capacity"]]
-            if eligible:
-                course_rooms[c["id"]] = eligible[:MAX_ROOMS_PER_COURSE]
-            else:
-                skipped_no_room.append(c)
-
-        if skipped_no_room:
-            max_room = max(r["capacity"] for r in rooms)
-            _log(f"[SOLVER] WARNING: {len(skipped_no_room)} courses have no room with enough capacity:")
-            for s in skipped_no_room:
-                _log(f"  - {s['code']} ({s['name']}): needs {s['capacity']}, max room is {max_room}")
-
-        schedulable_courses = [c for c in courses if c["id"] in course_rooms]
-        _log(f"[SOLVER] Schedulable courses: {len(schedulable_courses)}")
-
-        # ── 1. Build model ────────────────────────────────────────────────────
-        model = cp_model.CpModel()
-
-        # ── 2. Decision variables: assign[prof_id, course_id, timeslot_id, room_id]
-        assign: Dict[tuple, Any] = {}
-        for p in active_professors:
-            for c in schedulable_courses:
-                for t in timeslots:
-                    for r in course_rooms[c["id"]]:
-                        assign[(p["id"], c["id"], t["id"], r["id"])] = model.NewBoolVar(
-                            f"a_p{p['id']}_c{c['id']}_t{t['id']}_r{r['id']}"
-                        )
-
-        _log(f"[SOLVER] Created {len(assign)} decision variables "
-             f"(down from ~{len(professors)*len(courses)*len(timeslots)*len(rooms)} with all rooms)")
-
-        if len(assign) == 0:
+        timed_courses = [course for course in courses if not course.get("is_timeless")]
+        if timed_courses and (not timeslots or not rooms):
             return {
                 "status": "error",
-                "message": "No valid assignment variables could be created. "
-                           "Check that room capacities are >= course capacities.",
+                "message": "Timed courses exist, but timeslots or rooms are missing.",
             }
 
-        assumptions_map: Dict[int, str] = {}
-
-        # ── 3. HARD CONSTRAINTS ───────────────────────────────────────────────
-
-        # ── Pre-compute overlapping timeslot pairs ────────────────────────────
-        # Two timeslots conflict if they share at least one day AND their time
-        # ranges overlap (start1 < end2 AND start2 < end1).
-        def _time_to_min(t_str: str) -> int:
-            """Convert 'HH:MM' to minutes since midnight."""
-            parts = t_str.split(":")
-            return int(parts[0]) * 60 + int(parts[1])
-
-        def _timeslots_overlap(t1: dict, t2: dict) -> bool:
-            """Return True if two timeslots share a day and their times intersect."""
-            days1 = set(t1["days"])
-            days2 = set(t2["days"])
-            if not days1 & days2:
-                return False
-            s1, e1 = _time_to_min(t1["start_time"]), _time_to_min(t1["end_time"])
-            s2, e2 = _time_to_min(t2["start_time"]), _time_to_min(t2["end_time"])
-            return s1 < e2 and s2 < e1
-
-        # Build a set of conflicting timeslot ID pairs (includes self-pairs)
-        conflict_pairs: set = set()
-        for i, t1 in enumerate(timeslots):
-            for t2 in timeslots[i:]:
-                if _timeslots_overlap(t1, t2):
-                    conflict_pairs.add((t1["id"], t2["id"]))
-
-        _log(f"[SOLVER] Computed {len(conflict_pairs)} overlapping timeslot pairs "
-             f"(out of {len(timeslots)} timeslots)")
-
-        # A. A professor cannot teach two courses at overlapping times
-        b_physics = model.NewBoolVar("assump_A_physics")
-        for p in active_professors:
-            for (tid1, tid2) in conflict_pairs:
-                if tid1 == tid2:
-                    # Same timeslot — original logic
-                    vars_pt = [assign[k] for k in assign if k[0] == p["id"] and k[2] == tid1]
-                else:
-                    # Different but overlapping timeslots
-                    vars_pt = [assign[k] for k in assign
-                               if k[0] == p["id"] and k[2] in (tid1, tid2)]
-                if vars_pt:
-                    model.Add(sum(vars_pt) <= 1).OnlyEnforceIf(b_physics)
-        model.AddAssumption(b_physics)
-        assumptions_map[b_physics.Index()] = "A professor cannot teach multiple courses at overlapping times."
-
-        # A2. A room cannot have more than one course at overlapping times
-        b_room_double = model.NewBoolVar("assump_A2_room_double")
-        all_room_ids = set()
-        for room_list in course_rooms.values():
-            for r in room_list:
-                all_room_ids.add(r["id"])
-
-        for rid in all_room_ids:
-            for (tid1, tid2) in conflict_pairs:
-                if tid1 == tid2:
-                    vars_rt = [assign[k] for k in assign if k[2] == tid1 and k[3] == rid]
-                else:
-                    vars_rt = [assign[k] for k in assign
-                               if k[2] in (tid1, tid2) and k[3] == rid]
-                if vars_rt:
-                    model.Add(sum(vars_rt) <= 1).OnlyEnforceIf(b_room_double)
-        model.AddAssumption(b_room_double)
-        assumptions_map[b_room_double.Index()] = "A room cannot be double-booked at overlapping times."
-        _log(f"[SOLVER] Room pool: {len(all_room_ids)} unique rooms in use")
-
-        # B. Minimum/Maximum course sections
-        for c in schedulable_courses:
-            vars_c = [assign[k] for k in assign if k[1] == c["id"]]
-
-            if not vars_c:
-                _log(f"[SOLVER] WARNING: Course {c['code']} has 0 assignment vars. Skipping.")
-                continue
-
-            b_min = model.NewBoolVar(f"assump_B_min_c{c['id']}")
-            model.Add(sum(vars_c) >= c["min_sections"]).OnlyEnforceIf(b_min)
-            model.AddAssumption(b_min)
-            assumptions_map[b_min.Index()] = (
-                f"Course {c['code']} ({c['name']}) requires a minimum of {c['min_sections']} sections."
-            )
-
-            b_max = model.NewBoolVar(f"assump_B_max_c{c['id']}")
-            model.Add(sum(vars_c) <= c["max_sections"]).OnlyEnforceIf(b_max)
-            model.AddAssumption(b_max)
-            assumptions_map[b_max.Index()] = (
-                f"Course {c['code']} ({c['name']}) is capped at a maximum of {c['max_sections']} sections."
-            )
-
-        # C. Professor load limits
-        for p in active_professors:
-            pref = preferences.get(str(p["id"]), {})
-            vars_p = [assign[k] for k in assign if k[0] == p["id"]]
-
-            db_limit = p["fall_count"] if semester.lower() == "fall" else p["spring_count"]
-            email_limit = pref.get("max_load")
-            limit = min(db_limit, email_limit) if email_limit is not None else db_limit
-
-            if limit <= 0:
-                _log(f"[SOLVER] WARNING: Professor {p['name']} has load limit {limit} "
-                     f"(db={db_limit}, email={email_limit})")
-
-            b = model.NewBoolVar(f"assump_C_load_p{p['id']}")
-            model.Add(sum(vars_p) <= limit).OnlyEnforceIf(b)
-            model.AddAssumption(b)
-            assumptions_map[b.Index()] = f"Professor {p['name']} cannot teach more than {limit} sections."
-
-        # E. Timeslot capacity
-        for t in timeslots:
-            vars_t = [assign[k] for k in assign if k[2] == t["id"]]
-            if not vars_t:
-                continue
-            b = model.NewBoolVar(f"assump_E_cap_t{t['id']}")
-            model.Add(sum(vars_t) <= t["max_classes"]).OnlyEnforceIf(b)
-            model.AddAssumption(b)
-            assumptions_map[b.Index()] = (
-                f"Timeslot {t['label']} cannot exceed its capacity of {t['max_classes']} concurrent classes."
-            )
-
-        # F. Prime-time cap — use intermediate IntVars to avoid a single massive
-        #    linear expression with hundreds of thousands of terms.
-        prime_cfg = constraints_cfg.get("prime_time")
-        if prime_cfg:
-            pt_start = prime_cfg.get("start_time", "09:00")
-            pt_end = prime_cfg.get("end_time", "14:00")
-            max_pct = prime_cfg.get("max_percentage", 60)
-
-            prime_slot_ids = {t["id"] for t in timeslots if pt_start <= t["start_time"] < pt_end}
-            if prime_slot_ids:
-                n_vars = len(assign)
-                prime_vars = [assign[k] for k in assign if k[2] in prime_slot_ids]
-
-                if prime_vars and n_vars > 0:
-                    # Create intermediate counting variables
-                    total_sections = model.NewIntVar(0, n_vars, "total_sections")
-                    prime_sections = model.NewIntVar(0, len(prime_vars), "prime_sections")
-                    model.Add(total_sections == sum(assign.values()))
-                    model.Add(prime_sections == sum(prime_vars))
-
-                    b = model.NewBoolVar("assump_F_prime")
-                    model.Add(prime_sections * 100 <= max_pct * total_sections).OnlyEnforceIf(b)
-                    model.AddAssumption(b)
-                    assumptions_map[b.Index()] = (
-                        f"Prime-time cap exceeded: max {max_pct}% of sections allowed "
-                        f"between {pt_start} and {pt_end}."
-                    )
-                    _log(f"[SOLVER] Prime-time constraint: {len(prime_vars)} prime vars, "
-                         f"{n_vars} total vars, max {max_pct}%")
-
-        # G. Blocked timeslots
-        blocked_cfg = constraints_cfg.get("blocked_timeslots")
-        if blocked_cfg:
-            blocked_labels = set(blocked_cfg.get("labels", []))
-            blocked_ids = {t["id"]: t["label"] for t in timeslots if t["label"] in blocked_labels}
-            for tid, label in blocked_ids.items():
-                b = model.NewBoolVar(f"assump_G_blk_t{tid}")
-                vars_blocked = [assign[k] for k in assign if k[2] == tid]
-                for var in vars_blocked:
-                    model.Add(var == 0).OnlyEnforceIf(b)
-                model.AddAssumption(b)
-                assumptions_map[b.Index()] = f"Timeslot {label} is marked as blocked by administration."
-
-        _log(f"[SOLVER] All constraints added. Assumptions: {len(assumptions_map)}")
-
-        # ── 4. SOFT CONSTRAINTS (Objective) ──────────────────────────────────
-        #
-        # Weight guide:
-        #   +500  preferred course           — prof should teach what they asked for
-        #   +200  timeslot match (bonus)      — exactly the timeslot they paired with a course
-        #   +100  preferred level             — level preference beyond specific courses
-        #   -1000 avoid course                — strong: do NOT assign this
-        #   -200  avoid timeslot / avoid day  — scheduling avoidance
-        #   -20   non-preferred course        — mild nudge away from unrequested courses
-        #
-        WEIGHT_PREFERRED_COURSE = 500
-        WEIGHT_TIMESLOT_MATCH = 200
-        WEIGHT_PREFERRED_LEVEL = 100
-        WEIGHT_AVOID_COURSE = -1000
-        WEIGHT_AVOID_TIMESLOT = -200
-        WEIGHT_AVOID_DAY = -200
-        WEIGHT_NON_PREFERRED_COURSE = -20
-
-        objective_terms = []
-
-        course_dict = {c["id"]: c for c in schedulable_courses}
-        timeslot_dict = {t["id"]: t for t in timeslots}
-
-        for p in active_professors:
-            pref = preferences.get(str(p["id"]), {})
-
-            avoid_courses = pref.get("avoid_courses", [])
-            preferred_levels = pref.get("preferred_levels", [])
-            avoid_timeslots = pref.get("avoid_timeslots", [])
-            avoid_days = pref.get("avoid_days", [])
-
-            # ── Determine source format ───────────────────────────────────────
-            course_assignments = pref.get("course_assignments", [])  # new format
-            preferred_courses_legacy = pref.get("preferred_courses", [])  # old format
-
-            using_new_format = bool(course_assignments)
-
-            if using_new_format:
-                # Build lookup: course_key -> list of desired timeslot labels (may be null)
-                # Multiple entries for same course = multiple desired sections
-                wanted_course_keys = [a.get("course", "") for a in course_assignments]
-                # For timeslot bonus: map course_key -> set of desired timeslots
-                wanted_timeslots_by_course: Dict[str, set] = {}
-                for a in course_assignments:
-                    ck = a.get("course", "")
-                    ts = a.get("timeslot")
-                    if ck and ts:
-                        wanted_timeslots_by_course.setdefault(ck, set()).add(ts)
-
-                if pref and (course_assignments or avoid_courses or preferred_levels):
-                    _log(f"[SOLVER] Prefs for {p['name']} (new format): "
-                         f"want={wanted_course_keys}, avoid={avoid_courses}, "
-                         f"levels={preferred_levels}, avoid_days={avoid_days}")
-            else:
-                # Legacy format: flat preferred_courses list
-                wanted_course_keys = preferred_courses_legacy
-                wanted_timeslots_by_course = {}
-                preferred_timeslots_legacy = pref.get("preferred_timeslots", [])
-
-                if pref and (preferred_courses_legacy or avoid_courses or preferred_levels):
-                    _log(f"[SOLVER] Prefs for {p['name']} (legacy): "
-                         f"want={preferred_courses_legacy}, avoid={avoid_courses}, "
-                         f"levels={preferred_levels}, avoid_days={avoid_days}")
-
-            p_keys = [k for k in assign if k[0] == p["id"]]
-
-            for k in p_keys:
-                var = assign[k]
-                c = course_dict.get(k[1])
-                t = timeslot_dict.get(k[2])
-
-                if not c or not t:
-                    continue
-
-                course_key = f"{c['code']} | {c['name']}"
-                is_preferred = (c["code"] in wanted_course_keys or
-                                course_key in wanted_course_keys)
-                is_avoided = (c["code"] in avoid_courses or
-                              course_key in avoid_courses)
-
-                # Course preference
-                if is_preferred:
-                    objective_terms.append(var * WEIGHT_PREFERRED_COURSE)
-                    # Bonus: timeslot matches what prof paired with this course
-                    desired_slots = wanted_timeslots_by_course.get(course_key, set())
-                    if t["label"] in desired_slots:
-                        objective_terms.append(var * WEIGHT_TIMESLOT_MATCH)
-                elif is_avoided:
-                    objective_terms.append(var * WEIGHT_AVOID_COURSE)
-                elif wanted_course_keys:
-                    # Prof has expressed preferences but this course isn't one of them
-                    objective_terms.append(var * WEIGHT_NON_PREFERRED_COURSE)
-
-                # Level preference
-                if c["level"] in preferred_levels:
-                    objective_terms.append(var * WEIGHT_PREFERRED_LEVEL)
-
-                # Timeslot avoidance
-                if t["label"] in avoid_timeslots:
-                    objective_terms.append(var * WEIGHT_AVOID_TIMESLOT)
-
-                # Legacy: timeslot preference (old format only)
-                if not using_new_format:
-                    if t["label"] in preferred_timeslots_legacy:
-                        objective_terms.append(var * 50)
-
-                # Day avoidance
-                for day in avoid_days:
-                    if day in t["days"]:
-                        objective_terms.append(var * WEIGHT_AVOID_DAY)
-
-        _log(f"[SOLVER] Objective terms: {len(objective_terms)}")
-        if objective_terms:
-            model.Maximize(sum(objective_terms))
-
-        # ── 4.5 Validate model before solving ────────────────────────────────
-        _log("[SOLVER] Validating model...")
-        validation_error = model.Validate()
-        if validation_error:
-            _log(f"[SOLVER] MODEL VALIDATION FAILED: {validation_error}")
+        course_rooms, no_room_courses = _build_room_options(courses, rooms)
+        if no_room_courses:
+            details = ", ".join(f"{course['code']} ({course['name']})" for course in no_room_courses)
             return {
                 "status": "error",
-                "message": f"The CP-SAT model is invalid: {validation_error}",
+                "message": f"The following timed courses have no eligible room: {details}",
             }
 
-        _log(f"[SOLVER] Model validated OK. Starting solver...")
+        allocation_result = _solve_allocation_phase(
+            semester=semester,
+            professors=professors,
+            courses=courses,
+            normalized_prefs=normalized_prefs,
+        )
+        if allocation_result.get("status") != "success":
+            return allocation_result
 
-        # ── 5. Solve ──────────────────────────────────────────────────────────
-        solver = cp_model.CpSolver()
-        solver.parameters.max_time_in_seconds = 540.0  # 540s gives 60s buffer before Lambda's 10-min timeout
-        solver.parameters.num_search_workers = 2       # Lambda with 3GB RAM gets ~2 vCPUs
+        placement_result = _solve_placement_phase(
+            timed_shells=allocation_result["timed_shells"],
+            courses=courses,
+            timeslots=timeslots,
+            rooms=rooms,
+            course_rooms=course_rooms,
+            normalized_prefs=normalized_prefs,
+            constraints_cfg=constraints_cfg,
+        )
+        if placement_result.get("status") != "success":
+            return placement_result
 
-        status = solver.Solve(model)
-        _log(f"[SOLVER] Solve complete. Status: {solver.StatusName(status)}, "
-             f"Wall time: {solver.WallTime():.1f}s")
+        assignments = allocation_result["assignments"] + placement_result["assignments"]
+        total_score = allocation_result["score"] + placement_result["score"]
+        total_wall_time = allocation_result["wall_time"] + placement_result["wall_time"]
 
-        if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-            assignments = []
-            for k, var in assign.items():
-                if solver.Value(var) == 1:
-                    p_id, c_id, t_id, r_id = k
-                    assignments.append({
-                        "professor_id": p_id,
-                        "course_id": c_id,
-                        "timeslot_id": t_id,
-                        "room_id": r_id,
-                    })
-            _log(f"[SOLVER] SUCCESS: {len(assignments)} assignments, score={solver.ObjectiveValue()}")
-            return {
-                "status": "success",
-                "solver_status": solver.StatusName(status),
-                "score": solver.ObjectiveValue(),
-                "wall_time": solver.WallTime(),
-                "assignments": assignments,
-            }
-
-        elif status == cp_model.INFEASIBLE:
-            conflict_indices = solver.SufficientAssumptionsForInfeasibility()
-            if conflict_indices:
-                bottlenecks = [assumptions_map[idx] for idx in conflict_indices if idx in assumptions_map]
-                unique_bottlenecks = list(dict.fromkeys(bottlenecks))
-                _log(f"[SOLVER] INFEASIBLE. Bottlenecks: {unique_bottlenecks}")
-                return {
-                    "status": "infeasible",
-                    "message": "The solver failed because the following constraints conflict with each other:",
-                    "bottlenecks": unique_bottlenecks,
-                }
-            else:
-                _log("[SOLVER] INFEASIBLE. No unsatisfiable core identified.")
-                return {
-                    "status": "infeasible",
-                    "message": (
-                        "The solver could not find any possible schedule that satisfies all hard constraints, "
-                        "and it could not identify a specific unsatisfiable core to explain the infeasibility."
-                    ),
-                }
-        else:
-            response_info = solver.ResponseStats()
-            _log(f"[SOLVER] Non-success status: {solver.StatusName(status)}")
-            _log(f"[SOLVER] Response stats: {response_info}")
-            return {
-                "status": "infeasible",
-                "solver_status": solver.StatusName(status),
-                "message": f"Solver stopped with status: {solver.StatusName(status)}. {response_info}",
-            }
+        _log(
+            f"[SOLVER] SUCCESS: {len(assignments)} assignments "
+            f"({allocation_result['timeless_sections']} timeless), score={total_score}"
+        )
+        return {
+            "status": "success",
+            "solver_status": f"ALLOC={allocation_result['solver_status']}; PLACE={placement_result['solver_status']}",
+            "score": total_score,
+            "wall_time": total_wall_time,
+            "assignments": assignments,
+            "timeless_sections": allocation_result["timeless_sections"],
+        }
 
     except Exception as e:
         tb = traceback.format_exc()

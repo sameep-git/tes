@@ -63,7 +63,7 @@ def gather_solver_input(semester: str, year: int) -> Dict[str, Any]:
                 Preference.semester == semester,
                 Preference.year == year,
                 Preference.admin_approved == True,
-            ).first()
+            ).order_by(Preference.received_at.desc()).first()
             preferences[str(p.id)] = pref.parsed_json if (pref and pref.parsed_json) else {}
 
         # Constraint configs
@@ -105,7 +105,6 @@ def gather_solver_input(semester: str, year: int) -> Dict[str, Any]:
                     "is_timeless": c.is_timeless,
                 }
                 for c in courses
-                if not c.is_timeless  # timeless courses are pre-assigned; skip Lambda
             ],
             "timeslots": [
                 {
@@ -124,69 +123,6 @@ def gather_solver_input(semester: str, year: int) -> Dict[str, Any]:
         }
     finally:
         db.close()
-
-
-# ── Pre-assignment: timeless courses ────────────────────────────────────────
-
-def pre_assign_timeless_courses(
-    semester: str, year: int, schedule_id: int, preferences: Dict[str, Any]
-) -> int:
-    """
-    Before the solver runs, scan all approved preferences for course_assignments
-    that reference timeless courses (is_timeless=True). Create a Section for each
-    such assignment directly, without going through Lambda.
-
-    Returns the number of timeless sections created.
-    """
-    db = SessionLocal()
-    try:
-        # Build a lookup: "CODE | name" -> Course object (timeless only)
-        timeless_courses = db.query(Course).filter(
-            Course.semester == semester,
-            Course.year == year,
-            Course.is_timeless == True,
-        ).all()
-        if not timeless_courses:
-            return 0
-
-        timeless_map: Dict[str, Course] = {
-            f"{c.code} | {c.name}": c for c in timeless_courses
-        }
-        # Also allow bare code lookup (in case AI drops the name part)
-        timeless_code_map: Dict[str, Course] = {
-            c.code: c for c in timeless_courses
-        }
-
-        sections_created = 0
-        for prof_id_str, pref in preferences.items():
-            prof_id = int(prof_id_str)
-            assignments = pref.get("course_assignments", [])
-            for entry in assignments:
-                course_key = entry.get("course", "")
-                # Try full key first, then bare code
-                course = timeless_map.get(course_key) or timeless_code_map.get(course_key)
-                if not course:
-                    continue  # not a timeless course — solver handles it
-
-                new_sec = Section(
-                    course_id=course.id,
-                    professor_id=prof_id,
-                    timeslot_id=None,   # no meeting time
-                    room_id=None,       # no room needed
-                    schedule_id=schedule_id,
-                    status="Assigned",
-                )
-                db.add(new_sec)
-                sections_created += 1
-
-        db.commit()
-        return sections_created
-    except Exception:
-        db.rollback()
-        raise
-    finally:
-        db.close()
-
 
 # ── Orchestrator ─────────────────────────────────────────────────────────────
 
@@ -240,12 +176,7 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
             db.add(new_schedule)
             db.commit()
 
-            # Step 3a: Pre-assign timeless courses from professor preferences
-            timeless_count = pre_assign_timeless_courses(
-                semester, year, new_schedule.id, payload.get("preferences", {})
-            )
-
-            # Step 3b: Create solver-assigned sections
+            # Step 3a: Create solver-assigned sections, including timeless sections
             sections_created = 0
             for assignment in result.get("assignments", []):
                 new_sec = Section(
@@ -265,8 +196,8 @@ def run_solver(semester: str, year: int) -> Dict[str, Any]:
                 "status": "success",
                 "solution_type": result.get("solver_status"),
                 "schedule_id": new_schedule.id,
-                "sections_created": sections_created + timeless_count,
-                "timeless_sections": timeless_count,
+                "sections_created": sections_created,
+                "timeless_sections": result.get("timeless_sections", 0),
                 "score": result.get("score"),
             }
         except Exception as e:
