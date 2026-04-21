@@ -980,6 +980,7 @@ def list_schedules(semester: Optional[str] = None, year: Optional[int] = None) -
     Returns schedule IDs, status, section count, and finalized date.
     Use this to find a schedule ID before calling delete_schedule, finalize_schedule, or get_schedule_stats.
     """
+    semester = semester.capitalize() if semester else semester
     from .models import Schedule
     db = SessionLocal()
     try:
