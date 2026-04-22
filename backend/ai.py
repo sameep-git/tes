@@ -10,11 +10,14 @@ from .models import Course, TimeSlot
 
 load_dotenv()
 
-client = genai.Client(
-    vertexai=True,
-    project=os.getenv("VERTEX_PROJECT_ID"),
-    location=os.getenv("VERTEX_LOCATION", "us-central1"),
-)
+try:
+    client = genai.Client(
+        vertexai=True,
+        project=os.getenv("VERTEX_PROJECT_ID"),
+        location=os.getenv("VERTEX_LOCATION", "us-central1"),
+    )
+except Exception:
+    client = None
 
 class CourseAssignment(BaseModel):
     course: str               # Full course key from catalog: "ECON 10223 | Intro Microeconomics"

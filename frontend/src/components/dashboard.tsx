@@ -139,10 +139,19 @@ const CourseAssignmentsEditor = ({
   courseOptions: {label: string, value: string}[],
   timeslotOptions: {label: string, value: string}[]
 }) => {
+  const [keys, setKeys] = useState<string[]>(() => assignments.map(() => Math.random().toString(36).slice(2)));
+
+  // Sync keys if assignments change externally
+  useEffect(() => {
+    if (assignments.length !== keys.length) {
+      setKeys(assignments.map(() => Math.random().toString(36).slice(2)));
+    }
+  }, [assignments, keys.length]);
+
   return (
     <div className="flex flex-col gap-2 w-full max-w-xl">
       {assignments.map((a, i) => (
-        <div key={i} className="flex gap-2 items-center">
+        <div key={keys[i] || i} className="flex gap-2 items-center">
           <div className="flex-1">
             <Select value={a.course} onValueChange={v => {
               const next = [...assignments];
@@ -172,6 +181,10 @@ const CourseAssignmentsEditor = ({
             const next = [...assignments];
             next.splice(i, 1);
             onChange(next);
+            
+            const nextKeys = [...keys];
+            nextKeys.splice(i, 1);
+            setKeys(nextKeys);
           }}>
             <Trash2 className="w-4 h-4 text-red-500" />
           </Button>
@@ -179,6 +192,7 @@ const CourseAssignmentsEditor = ({
       ))}
       <Button variant="outline" size="sm" className="h-8 w-fit mt-1 text-xs bg-white" onClick={() => {
         onChange([...assignments, { course: "", timeslot: null }]);
+        setKeys([...keys, Math.random().toString(36).slice(2)]);
       }}>
         <Plus className="w-3 h-3 mr-1" /> Add Section Request
       </Button>
