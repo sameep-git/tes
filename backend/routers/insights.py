@@ -82,19 +82,32 @@ def get_insights(
 
     for (parsed_json,) in approved_prefs_data:
         data = parsed_json or {}
-        
-        # Courses - Now keeping the full "CODE | Name"
-        for c in data.get("preferred_courses", []):
-            course_pref_counter[c] += 1
-            
+
+        # ── Course preferences ────────────────────────────────────────────────
+        # New format: course_assignments [{course, timeslot}, ...]
+        # Old format: preferred_courses [str, ...]
+        course_assignments = data.get("course_assignments", [])
+        if course_assignments:
+            for entry in course_assignments:
+                c = entry.get("course", "") if isinstance(entry, dict) else entry
+                if c:
+                    course_pref_counter[c] += 1
+                    # Timeslot preference from paired assignment
+                    ts_label = entry.get("timeslot") if isinstance(entry, dict) else None
+                    if ts_label and ts_label in all_timeslots:
+                        ts_pref_counter[ts_label] += 1
+        else:
+            # Legacy format fallback
+            for c in data.get("preferred_courses", []):
+                course_pref_counter[c] += 1
+            for ts_label in data.get("preferred_timeslots", []):
+                if ts_label in all_timeslots:
+                    ts_pref_counter[ts_label] += 1
+
         for c in data.get("avoid_courses", []):
             course_avoid_counter[c] += 1
-            
-        # Timeslots - Aggregate by full object label
-        for ts_label in data.get("preferred_timeslots", []):
-            if ts_label in all_timeslots:
-                ts_pref_counter[ts_label] += 1
-            
+
+        # Avoid timeslots
         for ts_label in data.get("avoid_timeslots", []):
             if ts_label in all_timeslots:
                 ts_avoid_counter[ts_label] += 1

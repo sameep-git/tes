@@ -48,6 +48,7 @@ class CourseTemplate(Base):
     default_min_sections: Mapped[int] = mapped_column(default=1)
     default_max_sections: Mapped[int] = mapped_column(default=5)
     default_capacity: Mapped[int] = mapped_column(default=45)
+    is_timeless: Mapped[bool] = mapped_column(default=False)  # no scheduled meeting time (e.g. Internship)
 
     core_ssc: Mapped[bool] = mapped_column(default=False)
     core_ht: Mapped[bool] = mapped_column(default=False)
@@ -72,6 +73,8 @@ class Course(Base):
     min_sections: Mapped[int] = mapped_column(default=1)
     max_sections: Mapped[int] = mapped_column(default=5)
     capacity: Mapped[int] = mapped_column(default=45)
+    is_timeless: Mapped[bool] = mapped_column(default=False)  # no scheduled meeting time (e.g. Internship, Honors Seminar)
+    # When True: solver skips this course; it's pre-assigned from professor preferences.
 
     # Core requirements satisfied by this course
     core_ssc: Mapped[bool] = mapped_column(default=False)

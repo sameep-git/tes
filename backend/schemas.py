@@ -33,6 +33,7 @@ class CourseTemplateBase(BaseModel):
     core_ht: bool = False
     core_ga: bool = False
     core_wem: bool = False
+    is_timeless: bool = False
 
 class CourseTemplateResponse(CourseTemplateBase):
     id: int
@@ -55,6 +56,7 @@ class CourseBase(BaseModel):
     core_ht: bool = False
     core_ga: bool = False
     core_wem: bool = False
+    is_timeless: bool = False
 
 class CourseResponse(CourseBase):
     id: int

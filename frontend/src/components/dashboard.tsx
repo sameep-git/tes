@@ -14,7 +14,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { AlertCircle, CheckCircle2, Clock, Eye, History, Loader2, Save, TrendingUp, Calendar, LayoutList } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock, Eye, History, Loader2, Save, TrendingUp, Calendar, LayoutList, Trash2, Plus } from 'lucide-react';
 import ChatPanel from './chat-panel';
 import { CourseHistoryDialog } from './course-history-dialog';
 import InsightsTab from './insights-tab';
@@ -126,6 +126,81 @@ const EditableField = ({
 );
 
 // ---------------------------------------------------------------------------
+// Course Assignments Editor
+// ---------------------------------------------------------------------------
+const CourseAssignmentsEditor = ({ 
+  assignments, 
+  onChange, 
+  courseOptions, 
+  timeslotOptions 
+}: { 
+  assignments: {course: string, timeslot: string | null}[], 
+  onChange: (val: any) => void,
+  courseOptions: {label: string, value: string}[],
+  timeslotOptions: {label: string, value: string}[]
+}) => {
+  const [keys, setKeys] = useState<string[]>(() => assignments.map(() => Math.random().toString(36).slice(2)));
+
+  // Sync keys if assignments change externally
+  useEffect(() => {
+    if (assignments.length !== keys.length) {
+      setKeys(assignments.map(() => Math.random().toString(36).slice(2)));
+    }
+  }, [assignments, keys.length]);
+
+  return (
+    <div className="flex flex-col gap-2 w-full max-w-xl">
+      {assignments.map((a, i) => (
+        <div key={keys[i] || i} className="flex gap-2 items-center">
+          <div className="flex-1">
+            <Select value={a.course} onValueChange={v => {
+              const next = [...assignments];
+              next[i].course = v;
+              onChange(next);
+            }}>
+              <SelectTrigger className="h-8 text-xs bg-white"><SelectValue placeholder="Select course" /></SelectTrigger>
+              <SelectContent className="max-h-60">
+                {courseOptions.map(opt => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="w-40">
+            <Select value={a.timeslot || "none"} onValueChange={v => {
+              const next = [...assignments];
+              next[i].timeslot = v === "none" ? null : v;
+              onChange(next);
+            }}>
+              <SelectTrigger className="h-8 text-xs bg-white"><SelectValue placeholder="Any timeslot" /></SelectTrigger>
+              <SelectContent className="max-h-60">
+                <SelectItem value="none">Any timeslot</SelectItem>
+                {timeslotOptions.map(opt => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => {
+            const next = [...assignments];
+            next.splice(i, 1);
+            onChange(next);
+            
+            const nextKeys = [...keys];
+            nextKeys.splice(i, 1);
+            setKeys(nextKeys);
+          }}>
+            <Trash2 className="w-4 h-4 text-red-500" />
+          </Button>
+        </div>
+      ))}
+      <Button variant="outline" size="sm" className="h-8 w-fit mt-1 text-xs bg-white" onClick={() => {
+        onChange([...assignments, { course: "", timeslot: null }]);
+        setKeys([...keys, Math.random().toString(36).slice(2)]);
+      }}>
+        <Plus className="w-3 h-3 mr-1" /> Add Section Request
+      </Button>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Editable Preference Detail Dialog
 // ---------------------------------------------------------------------------
 function PreferenceDetailDialog({
@@ -226,11 +301,12 @@ function PreferenceDetailDialog({
                     onChange={e => updateDraft('max_load', e.target.value ? Number(e.target.value) : null)}
                   />
                 </EditableField>
-                <EditableField label="Preferred Courses">
-                  <MultiSelect
-                    selected={(draft.preferred_courses as string[]) ?? []}
-                    options={courseOptions}
-                    onChange={val => updateDraft('preferred_courses', val)}
+                <EditableField label="Course Assignments">
+                  <CourseAssignmentsEditor
+                    assignments={(draft.course_assignments as any) || []}
+                    courseOptions={courseOptions}
+                    timeslotOptions={timeslotOptions}
+                    onChange={val => updateDraft('course_assignments', val)}
                   />
                 </EditableField>
                 <EditableField label="Avoid Courses">
@@ -238,13 +314,6 @@ function PreferenceDetailDialog({
                     selected={(draft.avoid_courses as string[]) ?? []}
                     options={courseOptions}
                     onChange={val => updateDraft('avoid_courses', val)}
-                  />
-                </EditableField>
-                <EditableField label="Preferred Timeslots">
-                  <MultiSelect
-                    selected={(draft.preferred_timeslots as string[]) ?? []}
-                    options={timeslotOptions}
-                    onChange={val => updateDraft('preferred_timeslots', val)}
                   />
                 </EditableField>
                 <EditableField label="Avoid Timeslots">
@@ -305,10 +374,16 @@ function PreferenceDetailDialog({
               <div className="bg-gray-50 rounded-lg px-4 py-2 border border-gray-200">
                 <ReadonlyField label="Requested Load" value={parsed.requested_load as string} />
                 <ReadonlyField label="Max Load" value={parsed.max_load as string} />
-                <ReadonlyField label="Preferred Courses" value={parsed.preferred_courses as string[]} />
+                <ReadonlyField 
+                  label="Course Assignments" 
+                  value={((parsed.course_assignments as any[]) || []).map(a => 
+                    `${a.course.split(' | ')[0]} ${a.timeslot ? `(${a.timeslot})` : '(Any time)'}`
+                  )} 
+                />
                 <ReadonlyField label="Avoid Courses" value={parsed.avoid_courses as string[]} />
                 <ReadonlyField label="Preferred Levels" value={parsed.preferred_levels as string[]} />
-                <ReadonlyField label="Preferred Timeslots" value={parsed.preferred_timeslots as string[]} />
+                {!!parsed.preferred_courses && <ReadonlyField label="Legacy Preferred Courses" value={parsed.preferred_courses as string[]} />}
+                {!!parsed.preferred_timeslots && <ReadonlyField label="Legacy Preferred Timeslots" value={parsed.preferred_timeslots as string[]} />}
                 <ReadonlyField label="Avoid Timeslots" value={parsed.avoid_timeslots as string[]} />
                 <ReadonlyField label="Avoid Days" value={parsed.avoid_days as string[]} />
                 <ReadonlyField
@@ -768,8 +843,13 @@ export default function Dashboard() {
                                           'bg-violet-50 text-violet-600 border-violet-200'
                                       }`}>{tag}</Badge>
                                   ))}
-                                  {coreTags(course).length === 0 && <span className="text-gray-300">—</span>}
-                                </div>
+                                    {coreTags(course).length === 0 && !course.is_timeless && <span className="text-gray-300">—</span>}
+                                    {course.is_timeless && (
+                                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-yellow-50 text-yellow-700 border-yellow-200">
+                                        Timeless
+                                      </Badge>
+                                    )}
+                                  </div>
                               </TableCell>
                               <TableCell className="text-right">
                                 <Button

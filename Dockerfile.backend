@@ -2,9 +2,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system deps (OR-Tools needs C++ runtime)
+# Install system deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc g++ libffi-dev curl \
+    libffi-dev curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
@@ -24,4 +24,4 @@ ENV DATABASE_URL=sqlite:////data/scheduler.db
 
 EXPOSE 8000
 
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-keep-alive", "660"]

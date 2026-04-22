@@ -53,7 +53,14 @@ FRIENDLY_TOOL_NAMES = {
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
-client = genai.Client() if os.getenv("GEMINI_API_KEY") else None
+try:
+    client = genai.Client(
+        vertexai=True,
+        project=os.getenv("VERTEX_PROJECT_ID"),
+        location=os.getenv("VERTEX_LOCATION", "us-central1"),
+    )
+except Exception:
+    client = None
 
 # -------------------------------------------------------------------------
 # System Instruction with Guardrails
@@ -119,7 +126,7 @@ async def chat_endpoint(request: Request):
     """
     if not client:
         return StreamingResponse(
-            iter(["data: " + json.dumps({"type": "error", "content": "GEMINI_API_KEY missing"}) + "\n\n"]),
+            iter(["data: " + json.dumps({"type": "error", "content": "Vertex AI credentials not configured on server."}) + "\n\n"]),
             media_type="text/event-stream"
         )
 
@@ -180,7 +187,26 @@ async def chat_endpoint(request: Request):
                     tool_func = TOOL_REGISTRY.get(tool_name)
                     if tool_func:
                         try:
-                            tool_result = tool_func(**tool_args)
+                            # Run the (potentially blocking) tool in a background
+                            # thread so the event loop stays free to yield
+                            # keep-alive pings every 10 seconds.  This prevents
+                            # DigitalOcean / nginx / the browser from dropping
+                            # the SSE connection during long-running tools like
+                            # the solver (which waits for Lambda for roughly
+                            # 9-10 minutes in the current configuration).
+                            task = asyncio.ensure_future(
+                                asyncio.to_thread(tool_func, **tool_args)
+                            )
+                            while not task.done():
+                                try:
+                                    await asyncio.wait_for(
+                                        asyncio.shield(task), timeout=10.0
+                                    )
+                                except asyncio.TimeoutError:
+                                    # Task still running — send a heartbeat
+                                    yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+
+                            tool_result = task.result()
                         except Exception as e:
                             tool_result = json.dumps({"error": str(e)})
                     else:
