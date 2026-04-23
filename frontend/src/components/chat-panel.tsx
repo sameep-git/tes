@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Send, Bot, User, Loader2, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -83,6 +84,7 @@ export default function ChatPanel() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Cleanup abort controller on unmount
   useEffect(() => {
@@ -100,6 +102,21 @@ export default function ChatPanel() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, isThinking, activeTool, scrollToBottom]);
+
+  useEffect(() => {
+    const el = inputRef.current;
+    if (el) {
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight}px`;
+    }
+  }, [input])
+
+  useEffect(() => {
+    if (!isThinking && inputRef.current) {
+      // We add a 10ms delay to ensure the inputRef is updated before we focus on it.
+      setTimeout(() => inputRef.current?.focus(), 10);
+    }
+  }, [isThinking])
 
   const handleSend = async () => {
     if (!input.trim() || isThinking) return;
@@ -181,7 +198,9 @@ export default function ChatPanel() {
                 // Defer invalidation so React finishes committing the final
                 // chat message state update before TanStack Query triggers
                 // background refetches (which flush their own state updates).
-                setTimeout(() => queryClient.invalidateQueries(), 0);
+                setTimeout(() => {
+                  queryClient.invalidateQueries()
+                }, 0);
               }
             } catch {
               // Ignore malformed JSON chunks
@@ -279,13 +298,20 @@ export default function ChatPanel() {
           onSubmit={(e) => { e.preventDefault(); handleSend(); }}
           className="flex flex-col gap-2"
         >
-          <div className="flex items-center gap-2">
-            <Input
+          <div className="flex items-end gap-2">
+            <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ask TES Agent to do something..."
-              className="flex-1 bg-white"
+              className="flex-1 bg-white max-h-40"
               disabled={isThinking}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              ref={inputRef}
             />
             <Button type="submit" size="icon" disabled={!input.trim() || isThinking} className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-all">
               <Send className="w-4 h-4" />
