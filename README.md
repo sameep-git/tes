@@ -1,17 +1,18 @@
 # TES — TCU Econ Scheduler
 
-An AI-powered scheduling system for the TCU Economics department. The AI agent manages the full workflow: sending preference emails to professors, parsing replies, running a constraint solver, and generating semester teaching schedules.
+A distributed scheduling system designed for the TCU Economics department. The software automates the semester scheduling workflow: polling professor preferences via the Gmail API, parsing responses into structured data via Vertex AI, and generating optimized teaching schedules using an integer programming solver running on AWS Lambda.
 
 ---
 
 ## Architecture
 
-```
-frontend/   Next.js 16 dashboard + AI chat panel (TanStack Query for data fetching)
-backend/    FastAPI + SQLAlchemy + OR-Tools solver
-            └─ Gmail API for email send/receive
-            └─ Gemini AI for preference extraction + agent chat
-scheduler.db  SQLite database (auto-created on first run)
+```text
+frontend/       Next.js 16 dashboard (TanStack Query for state management)
+backend/        FastAPI + SQLAlchemy + Alembic (Database Migrations)
+                └─ Gmail API (Email polling & dispatch)
+                └─ Google Cloud Vertex AI (Preference parsing & natural language interface)
+lambda_solver/  AWS Lambda container running Google OR-Tools constraint solver
+scheduler.db    SQLite database (managed via Alembic)
 ```
 
 ---
@@ -20,14 +21,15 @@ scheduler.db  SQLite database (auto-created on first run)
 
 ### Prerequisites
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/)
-- A `GEMINI_API_KEY` from [Google AI Studio](https://aistudio.google.com/app/apikey)
+- Google Cloud Service Account credentials (`vertex_key.json`) with Vertex AI permissions
 - `credentials.json` — Gmail OAuth client credentials from Google Cloud Console
-- `token.json` — auto-generated on first interactive login (see Gmail setup below)
+- `token.json` — Auto-generated on first interactive login (see Gmail setup below)
+- AWS IAM credentials with permissions to invoke the Lambda solver
 
 ### 1. Configure environment
 ```bash
 cp .env.example .env
-# Edit .env and set your GEMINI_API_KEY
+# Edit .env to include your AWS and Google Cloud configurations
 ```
 
 ### 2. Run
@@ -39,11 +41,11 @@ docker compose up --build
 - Backend API: http://localhost:8000
 - API docs: http://localhost:8000/docs
 
-The database is stored in a Docker volume (`db_data`) and persists across restarts.
+The database is stored in an isolated Docker volume (`db_data`) and persists across container restarts. Alembic migrations run automatically on container startup.
 
 ---
 
-## Quick Start (Local Dev)
+## Quick Start (Local Development)
 
 ### Backend
 ```bash
@@ -51,7 +53,10 @@ python -m venv venv
 source venv/bin/activate          # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
-cp .env.example .env              # set GEMINI_API_KEY
+# Run database migrations
+alembic upgrade head
+
+cp .env.example .env              # Set required environment variables
 uvicorn backend.main:app --reload --port 8000
 ```
 
@@ -64,96 +69,81 @@ npm run dev                       # runs on http://localhost:3000
 
 ---
 
-## Gmail Setup (Required for email features)
-
-The system uses the Gmail API to send preference request emails and poll for replies.
-
-### One-time setup
-1. Go to [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Enable **Gmail API**
-2. Create an OAuth 2.0 client ID → Download as `credentials.json` → place at project root
-3. Run the interactive auth flow once to generate `token.json`:
-   ```bash
-   source venv/bin/activate
-   python -c "from backend.email import get_gmail_service; get_gmail_service(server_mode=False)"
-   ```
-   A browser window will open — log in with the department Gmail account.
-4. `token.json` is now saved at the project root. The backend uses it for all future API calls.
-
-> **Docker:** Mount both files as shown in `docker-compose.yml`. The token auto-refreshes (mounted writable); no need to re-run the flow unless access is revoked.
-
----
-
 ## Environment Variables
 
 | Variable | Required | Description |
 |---|---|---|
-| `GEMINI_API_KEY` | ✅ | From [Google AI Studio](https://aistudio.google.com/app/apikey) |
-| `DATABASE_URL` | No | SQLite path — default `sqlite:///./scheduler.db`, Docker uses `/data/scheduler.db` |
+| `VERTEX_PROJECT_ID` | ✅ | Google Cloud project ID for Vertex AI |
+| `VERTEX_LOCATION` | ✅ | Google Cloud region (e.g., `us-central1`) |
+| `AWS_ACCESS_KEY_ID` | ✅ | AWS IAM Access Key |
+| `AWS_SECRET_ACCESS_KEY`| ✅ | AWS IAM Secret Key |
+| `AWS_REGION` | ✅ | AWS Region (e.g., `us-east-1`) |
+| `SOLVER_LAMBDA_FUNCTION`| ✅ | Name of the AWS Lambda solver function |
+| `DATABASE_URL` | No | SQLite connection string — default `sqlite:///./scheduler.db` |
+| `CORS_ORIGINS` | No | Allowed frontend origins |
+| `TES_ADMIN_TOKEN` | No | API authentication token |
+
+*(Note: Do not commit `.env`, `vertex_key.json`, `credentials.json`, or `token.json` to version control.)*
 
 ---
 
-## AI Agent Capabilities (32 tools)
+## Gmail API Setup (Required for Email Sync)
 
-The chat panel talks to a Gemini agent with full tool access:
+The system utilizes the Gmail API to dispatch preference request emails and poll for replies.
 
-| Category | Tools |
-|---|---|
-| **Professors** | list, get, create, update, deactivate |
-| **Courses** | list, create, update, delete |
-| **Timeslots** | list, enable/disable |
-| **Email** | send to one prof, send to all unreplied, send reminder, get email log |
-| **Preferences** | poll inbox, view, list all, extract JSON, create manually, approve, unapprove, delete |
-| **Solver** | preflight checks, run solver, finalize schedule, delete draft, get stats |
-| **Constraints** | list active constraints |
-| **Guardrails** | run preflight checks, create manual preference, approve preference |
+### Initial Setup
+1. Enable the **Gmail API** in your Google Cloud Console.
+2. Create an OAuth 2.0 client ID and download it as `credentials.json` to the project root.
+3. Run the interactive authentication flow once to generate `token.json`:
+   ```bash
+   source venv/bin/activate
+   python -c "from backend.email_service import get_gmail_service; get_gmail_service(server_mode=False)"
+   ```
+   A browser window will open to authorize the department Gmail account.
+4. `token.json` is generated at the project root. The backend utilizes it for all subsequent API requests.
 
-### Automatic pipelines
-- **Poll → Extract → Auto-approve**: When the inbox is polled, replies are immediately AI-parsed. High-confidence preferences (≥ 85%, no leave, no admin notes) are auto-approved.
-- **Approve → Preflight**: After any approval, the agent immediately reports whether the system is ready to run the solver.
-- The agent never asks you for IDs — it looks them up by name using its tools.
-- Up to 5 rounds of tool-calling per message (multi-hop reasoning).
+> **Docker Note:** `docker-compose.yml` mounts these token files. The token auto-refreshes (mounted writable) so the interactive flow does not need to be re-run unless access is revoked.
+
+---
+
+## System Capabilities
+
+The backend provides a natural language interface to interact with the database and workflow tools:
+
+- **Data Management:** Full CRUD operations for Professors, Courses, Timeslots, and Preferences.
+- **Automated Workflow:**
+  - **Poll & Extract:** The background worker polls the inbox. Replies are parsed into structured JSON via Vertex AI. High-confidence preferences (≥ 85%) without manual notes are flagged for auto-approval.
+  - **Constraint Validation:** Preflight checks ensure the dataset is solvable before dispatching requests to AWS Lambda.
+- **Solver Integration:** Invokes the OR-Tools optimization model asynchronously on AWS Lambda to prevent blocking the main FastAPI thread.
+- **Schema Management:** Alembic handles zero-downtime schema migrations (`alembic upgrade head`).
 
 ---
 
 ## Project Structure
 
-```
+```text
 backend/
-  main.py          FastAPI app, CORS, background scheduler
+  main.py          FastAPI application and background scheduler
   models.py        SQLAlchemy ORM models
-  schemas.py       Pydantic request/response schemas
-  database.py      DB session setup
-  tools.py         All 32 AI-callable tool functions
-  email.py         Gmail API send/poll logic
-  ai.py            Preference extraction via Gemini
-  solver.py        OR-Tools constraint solver
-  routers/
-    chat.py        Streaming AI chat endpoint (SSE, multi-round tool loop)
-    professors.py  Professor CRUD API
-    courses.py     Course listing API
-    preferences.py Preference listing + approval API
-    schedules.py   Schedule listing API
-    health.py      Health check
+  schemas.py       Pydantic validation schemas
+  database.py      Database connection handling
+  tools.py         Interface definitions for system actions
+  email_service.py Gmail API integration
+  ai.py            Vertex AI extraction logic
+  solver.py        AWS Lambda invocation and payload construction
+  alembic/         Database migration scripts
+  routers/         FastAPI route handlers
 
 frontend/
   src/
-    app/
-      layout.tsx     Root layout — wraps app in QueryClientProvider
-    lib/
-      api.ts         Shared API fetch functions, query keys, and TypeScript interfaces
-    components/
-      providers.tsx  TanStack Query provider (30s stale time, background refetch)
-      dashboard.tsx  Main dashboard — independent per-tab data loading via useQuery
-      chat-panel.tsx Streaming AI chat with markdown + drag-to-scroll table rendering
+    app/           Next.js 16 App Router configuration
+    lib/           API clients and shared TypeScript interfaces
+    components/    React components, including the Dashboard and Chat Panel
+
+lambda_solver/
+  solver_core.py   Standalone OR-Tools scheduling logic for AWS Lambda deployment
+  Dockerfile       Lambda container build definition
 ```
-
----
-
-## Background Email Polling
-
-The backend automatically polls the Gmail inbox every **15 minutes** for new preference replies. Each poll runs the full pipeline: detect → extract → auto-approve (if confidence ≥ 85%).
-
-To disable, remove the `scheduler.add_job(...)` call in `backend/main.py`.
 
 ---
 
