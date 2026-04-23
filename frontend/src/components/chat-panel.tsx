@@ -4,7 +4,6 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Send, Bot, User, Loader2, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -109,14 +108,18 @@ export default function ChatPanel() {
       el.style.height = "auto";
       el.style.height = `${el.scrollHeight}px`;
     }
-  }, [input])
+  }, [input]);
 
   useEffect(() => {
     if (!isThinking && inputRef.current) {
       // We add a 10ms delay to ensure the inputRef is updated before we focus on it.
-      setTimeout(() => inputRef.current?.focus(), 10);
+      const focusTimeout = setTimeout(() => inputRef.current?.focus(), 10);
+
+      return () => {
+        window.clearTimeout(focusTimeout);
+      }
     }
-  }, [isThinking])
+  }, [isThinking]);
 
   const handleSend = async () => {
     if (!input.trim() || isThinking) return;
@@ -306,7 +309,7 @@ export default function ChatPanel() {
               className="flex-1 bg-white max-h-40"
               disabled={isThinking}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
                   handleSend();
                 }
