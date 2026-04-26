@@ -120,14 +120,32 @@ You have access to tools for:
 
 def _friendly_chat_error_message(error: Exception) -> str:
     raw_message = str(error)
-    if "number of function response parts is equal to the number of function call parts" in raw_message:
+    status_code = getattr(error, "status_code", None)
+    response_json = getattr(error, "response_json", None) or {}
+    error_payload = response_json.get("error", {}) if isinstance(response_json, dict) else {}
+    provider_status = error_payload.get("status")
+    provider_message = error_payload.get("message", raw_message)
+
+    if status_code == 429 or provider_status == "RESOURCE_EXHAUSTED":
         return (
-            "The agent hit a tool-calling protocol error before it could finish the request. "
-            "No further automated action was completed in that step. "
-            "Please retry the request. If this was a bulk action, try wording it explicitly, for example: "
-            "`preview delete all unapproved preferences for Fall 2027`."
+            "The request completed as far as the system could take it, but Vertex AI is rate-limited right now, "
+            "so the agent could not generate its final response. Please wait a moment and try again."
         )
-    return raw_message
+
+    if status_code == 400 and provider_status == "INVALID_ARGUMENT":
+        if "number of function response parts is equal to the number of function call parts" in provider_message:
+            return (
+                "The agent hit a tool-calling protocol error before it could finish the request. "
+                "No further automated action was completed in that step. "
+                "Please retry the request. If this was a bulk action, try wording it explicitly, for example: "
+                "`preview delete all unapproved preferences for Fall 2027`."
+            )
+        return (
+            "The agent sent an invalid tool request to Vertex AI and could not finish the step. "
+            "Please retry the request."
+        )
+
+    return provider_message
 
 # -------------------------------------------------------------------------
 # Streaming API Endpoint
