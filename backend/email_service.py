@@ -1,5 +1,7 @@
 import os.path
 import base64
+import html
+import re
 from email.mime.text import MIMEText
 
 from google.auth.transport.requests import Request
@@ -160,18 +162,55 @@ def _safe_decode(data: str) -> str:
         return ""
 
 
+def _html_to_text(html_body: str) -> str:
+    """Convert a small HTML email fragment into readable plain text."""
+    if not html_body:
+        return ""
+
+    text = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", html_body)
+    text = re.sub(r"(?i)<br\s*/?>", "\n", text)
+    text = re.sub(r"(?i)</p\s*>", "\n\n", text)
+    text = re.sub(r"(?i)</div\s*>", "\n", text)
+    text = re.sub(r"(?i)</li\s*>", "\n", text)
+    text = re.sub(r"(?i)<li\s*>", "- ", text)
+    text = re.sub(r"(?s)<[^>]+>", " ", text)
+    text = html.unescape(text)
+    text = text.replace("\r", "")
+    text = re.sub(r"\n[ \t]+", "\n", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
 def get_email_body(payload: dict) -> str:
-    """Recursively extract the plain text body from a Gmail API payload."""
-    body = ""
-    if 'parts' in payload:
-        for part in payload['parts']:
-            if part['mimeType'] == 'text/plain':
-                body += _safe_decode(part['body'].get('data', ''))
-            elif 'parts' in part:
-                body += get_email_body(part)
-    elif payload.get('mimeType') == 'text/plain':
-        body = _safe_decode(payload['body'].get('data', ''))
-    return body
+    """Recursively extract the email body, preferring plain text and falling back to HTML."""
+    plain_parts: list[str] = []
+    html_parts: list[str] = []
+
+    def walk(part: dict) -> None:
+        mime_type = part.get('mimeType', '')
+        body_data = part.get('body', {}).get('data', '')
+
+        if mime_type == 'text/plain':
+            decoded = _safe_decode(body_data)
+            if decoded.strip():
+                plain_parts.append(decoded)
+        elif mime_type == 'text/html':
+            decoded = _safe_decode(body_data)
+            if decoded.strip():
+                html_parts.append(decoded)
+
+        for child in part.get('parts', []) or []:
+            walk(child)
+
+    walk(payload)
+
+    plain_body = "\n".join(part.strip() for part in plain_parts if part.strip()).strip()
+    if plain_body:
+        return plain_body
+
+    html_body = "\n".join(part.strip() for part in html_parts if part.strip()).strip()
+    return _html_to_text(html_body)
 
 def poll_unread_replies(server_mode: bool = False) -> list:
     """
