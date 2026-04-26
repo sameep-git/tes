@@ -221,10 +221,34 @@ def trigger_poll_unread_replies(server_mode: bool = False) -> str:
 
             print(f"[POLL-TRIGGER]   Preference #{pref.id} found. raw_email length={len(pref.raw_email or '')}. Starting AI extraction...", flush=True)
 
-            # Step 2: Auto-extract
-            extraction_result_str = extract_and_save_preference_json(pref.id)
-            print(f"[POLL-TRIGGER]   AI extraction complete for pref #{pref.id}.", flush=True)
-            auto_extracted.append({"preference_id": pref.id, "extraction": extraction_result_str})
+            # Step 2: Auto-extract with a timeout so one stuck Vertex AI
+            # call doesn't block all 17 emails forever.
+            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+            EXTRACTION_TIMEOUT_SECONDS = 60
+
+            try:
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(extract_and_save_preference_json, pref.id)
+                    extraction_result_str = future.result(timeout=EXTRACTION_TIMEOUT_SECONDS)
+
+                print(f"[POLL-TRIGGER]   AI extraction complete for pref #{pref.id}.", flush=True)
+                auto_extracted.append({"preference_id": pref.id, "extraction": extraction_result_str})
+            except FuturesTimeout:
+                print(f"[POLL-TRIGGER]   ⚠ AI extraction TIMED OUT for pref #{pref.id} after {EXTRACTION_TIMEOUT_SECONDS}s — skipping.", flush=True)
+                needs_review.append({
+                    "preference_id": pref.id,
+                    "professor_name": f"Prof #{reply['professor_id']}",
+                    "reason": "AI extraction timed out",
+                })
+                continue
+            except Exception as extraction_err:
+                print(f"[POLL-TRIGGER]   ⚠ AI extraction FAILED for pref #{pref.id}: {extraction_err}", flush=True)
+                needs_review.append({
+                    "preference_id": pref.id,
+                    "professor_name": f"Prof #{reply['professor_id']}",
+                    "reason": f"AI extraction error: {str(extraction_err)[:100]}",
+                })
+                continue
 
             # Reload to get freshly parsed data
             db.refresh(pref)
