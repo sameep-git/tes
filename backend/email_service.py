@@ -182,6 +182,15 @@ def _html_to_text(html_body: str) -> str:
     return text.strip()
 
 
+def _extract_email_address(header_value: str) -> str:
+    """Extract a lowercase email address from a From/To header."""
+    if not header_value:
+        return ""
+    if '<' in header_value and '>' in header_value:
+        return header_value.split('<', 1)[1].split('>', 1)[0].strip().lower()
+    return header_value.strip().lower()
+
+
 def get_email_body(payload: dict) -> str:
     """Recursively extract the email body, preferring plain text and falling back to HTML."""
     plain_parts: list[str] = []
@@ -226,6 +235,8 @@ def poll_unread_replies(server_mode: bool = False) -> list:
 
     try:
         service = get_gmail_service(server_mode=server_mode)
+        mailbox_profile = service.users().getProfile(userId='me').execute()
+        mailbox_email = str(mailbox_profile.get('emailAddress', '')).strip().lower()
 
         # 1. Search for UNREAD preference-reply messages.
         # We only require UNREAD (not INBOX) so that threaded replies that Gmail
@@ -235,7 +246,7 @@ def poll_unread_replies(server_mode: bool = False) -> list:
         list_kwargs: dict = {
             'userId': 'me',
             'labelIds': ['UNREAD'],
-            'q': 'subject:"Action Required"',
+            'q': 'subject:"Action Required" -from:me',
         }
         results = service.users().messages().list(**list_kwargs).execute()
         while True:
@@ -272,13 +283,24 @@ def poll_unread_replies(server_mode: bool = False) -> list:
                 if name == 'subject':
                     subject = value
                 elif name == 'from':
-                    # Extract email from "Name <email@domain.com>" or "email@domain.com"
-                    if '<' in value and '>' in value:
-                        sender_email = value.split('<')[1].split('>')[0]
-                    else:
-                        sender_email = value
+                    sender_email = _extract_email_address(value)
                 elif name == 'x-scheduler-token':
                     scheduler_token = value
+
+            # Defensive guard: if a sent item or self-addressed copy still slips
+            # through the Gmail search, do not treat it as a professor reply.
+            if sender_email and mailbox_email and sender_email == mailbox_email:
+                service.users().messages().modify(
+                    userId='me',
+                    id=msg_id,
+                    body={'removeLabelIds': ['UNREAD']}
+                ).execute()
+                processed_replies.append({
+                    "error": "Skipped self-sent message.",
+                    "subject": subject,
+                    "sender": sender_email,
+                })
+                continue
 
             # Extract the body
             body_text = get_email_body(payload)
@@ -310,14 +332,16 @@ def poll_unread_replies(server_mode: bool = False) -> list:
                     EmailLog.direction == 'sent'
                 ).first()
                 if sent_log:
-                    prof_id = sent_log.professor_id
-                    # We can parse semester/year from the subject: "Action Required: Fall 2025 Teaching Preferences"
-                    try:
-                        subj_parts = sent_log.subject.split("Action Required: ")[1].split(" Teaching")[0]
-                        semester, year_str = subj_parts.split(" ")
-                        year = int(year_str)
-                    except Exception:
-                        pass
+                    expected_prof = db.query(Professor).filter(Professor.id == sent_log.professor_id).first()
+                    if expected_prof and str(expected_prof.email).strip().lower() == sender_email.lower():
+                        prof_id = sent_log.professor_id
+                        # We can parse semester/year from the subject: "Action Required: Fall 2025 Teaching Preferences"
+                        try:
+                            subj_parts = sent_log.subject.split("Action Required: ")[1].split(" Teaching")[0]
+                            semester, year_str = subj_parts.split(" ")
+                            year = int(year_str)
+                        except Exception:
+                            pass
             
             # If we couldn't definitively identify the professor/semester from the token or thread ID,
             # throw an error instead of guessing. The admin can manually assign it.
