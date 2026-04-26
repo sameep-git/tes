@@ -1413,6 +1413,81 @@ def delete_preference(pref_id: int) -> str:
         db.close()
 
 
+def bulk_delete_preferences(
+    semester: str,
+    year: int,
+    approved: Optional[bool] = None,
+    dry_run: bool = True,
+) -> str:
+    """
+    Bulk-delete preference records for a term, optionally filtered by approval state.
+    Defaults to dry_run=True so destructive chat requests can be previewed first.
+    """
+    semester = semester.capitalize() if semester else semester
+    db = SessionLocal()
+    try:
+        query = db.query(Preference).filter(
+            Preference.semester == semester,
+            Preference.year == year,
+        )
+        if approved is not None:
+            query = query.filter(Preference.admin_approved == approved)
+
+        prefs = query.order_by(Preference.received_at.desc(), Preference.id.desc()).all()
+        pref_ids = [pref.id for pref in prefs]
+        professor_ids = {pref.professor_id for pref in prefs}
+
+        professors = db.query(Professor).filter(Professor.id.in_(professor_ids)).all() if professor_ids else []
+        professor_names = {prof.id: prof.name for prof in professors}
+
+        matches = [
+            {
+                "preference_id": pref.id,
+                "professor_id": pref.professor_id,
+                "professor_name": professor_names.get(pref.professor_id, f"Prof #{pref.professor_id}"),
+                "admin_approved": pref.admin_approved,
+                "received_at": pref.received_at.isoformat() if pref.received_at else None,
+            }
+            for pref in prefs
+        ]
+
+        filter_label = (
+            "approved only" if approved is True
+            else "unapproved only" if approved is False
+            else "all preferences"
+        )
+
+        if dry_run:
+            return json.dumps({
+                "status": "preview",
+                "semester": semester,
+                "year": year,
+                "filter": filter_label,
+                "match_count": len(matches),
+                "matches": matches,
+                "message": f"Preview only. {len(matches)} {filter_label} would be deleted for {semester} {year}.",
+            })
+
+        for pref in prefs:
+            db.delete(pref)
+        db.commit()
+
+        return json.dumps({
+            "status": "success",
+            "semester": semester,
+            "year": year,
+            "filter": filter_label,
+            "deleted_count": len(matches),
+            "deleted_preference_ids": pref_ids,
+            "message": f"Deleted {len(matches)} {filter_label} for {semester} {year}.",
+        })
+    except Exception as e:
+        db.rollback()
+        return json.dumps({"error": str(e)})
+    finally:
+        db.close()
+
+
 # =========================================================================
 # Timeslot tools
 # =========================================================================
@@ -1705,6 +1780,7 @@ ALL_TOOLS = [
     approve_preference,
     unapprove_preference,
     delete_preference,
+    bulk_delete_preferences,
     # Solver & schedules
     run_preflight_checks,
     trigger_solver,
