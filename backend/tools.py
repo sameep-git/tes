@@ -188,15 +188,25 @@ def trigger_poll_unread_replies(server_mode: bool = False) -> str:
       3. Auto-approve preferences where confidence >= 0.85, on_leave=False, no admin notes
          (lower-confidence or flagged prefs stay pending for human review)
     """
+    import sys
+
+    print("[POLL-TRIGGER] Starting email poll...", flush=True)
     replies = poll_unread_replies(server_mode=server_mode)
+    print(f"[POLL-TRIGGER] poll_unread_replies returned {len(replies)} reply(ies).", flush=True)
 
     auto_extracted = []
     auto_approved = []
     needs_review = []
 
-    for reply in replies:
+    for idx, reply in enumerate(replies, 1):
         if "error" in reply or "professor_id" not in reply:
+            print(f"[POLL-TRIGGER] Reply {idx}/{len(replies)} skipped (error or no professor_id): {reply.get('error', 'missing professor_id')}", flush=True)
             continue
+
+        prof_id = reply["professor_id"]
+        sem = reply.get("semester", "?")
+        yr = reply.get("year", "?")
+        print(f"[POLL-TRIGGER] Reply {idx}/{len(replies)}: prof_id={prof_id}, {sem} {yr}", flush=True)
 
         db = SessionLocal()
         try:
@@ -206,10 +216,14 @@ def trigger_poll_unread_replies(server_mode: bool = False) -> str:
                 Preference.year == reply["year"],
             ).first()
             if not pref:
+                print(f"[POLL-TRIGGER]   No Preference record found — skipping.", flush=True)
                 continue
+
+            print(f"[POLL-TRIGGER]   Preference #{pref.id} found. raw_email length={len(pref.raw_email or '')}. Starting AI extraction...", flush=True)
 
             # Step 2: Auto-extract
             extraction_result_str = extract_and_save_preference_json(pref.id)
+            print(f"[POLL-TRIGGER]   AI extraction complete for pref #{pref.id}.", flush=True)
             auto_extracted.append({"preference_id": pref.id, "extraction": extraction_result_str})
 
             # Reload to get freshly parsed data

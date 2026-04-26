@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Send, Bot, User, Loader2, Wrench } from 'lucide-react';
+import { Send, Square, Bot, User, Loader2, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import ReactMarkdown from 'react-markdown';
@@ -120,6 +120,24 @@ export default function ChatPanel() {
       }
     }
   }, [isThinking]);
+
+  const handleStop = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsThinking(false);
+    setActiveTool(null);
+    setMessages(prev => {
+      const updated = [...prev];
+      const last = updated[updated.length - 1];
+      if (last?.role === 'assistant') {
+        const suffix = last.content ? '\n\n*(Request cancelled)*' : '*(Request cancelled)*';
+        updated[updated.length - 1] = { ...last, content: last.content + suffix };
+      }
+      return updated;
+    });
+  }, []);
 
   const handleSend = async () => {
     if (!input.trim() || isThinking) return;
@@ -316,9 +334,20 @@ export default function ChatPanel() {
               }}
               ref={inputRef}
             />
-            <Button type="submit" size="icon" disabled={!input.trim() || isThinking} className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-all">
-              <Send className="w-4 h-4" />
-            </Button>
+            {isThinking ? (
+              <Button
+                type="button"
+                size="icon"
+                onClick={handleStop}
+                className="bg-red-500 hover:bg-red-600 text-white shadow-sm transition-all"
+              >
+                <Square className="w-4 h-4" />
+              </Button>
+            ) : (
+              <Button type="submit" size="icon" disabled={!input.trim()} className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-all">
+                <Send className="w-4 h-4" />
+              </Button>
+            )}
           </div>
           <p className="text-xs text-center text-gray-400 mt-1 flex items-center justify-center gap-1">
             <Bot className="w-3 h-3" /> Agent can view and modify the database directly
