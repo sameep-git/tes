@@ -1705,7 +1705,6 @@ ALL_TOOLS = [
     approve_preference,
     unapprove_preference,
     delete_preference,
-    update_preference_json,
     # Solver & schedules
     run_preflight_checks,
     trigger_solver,

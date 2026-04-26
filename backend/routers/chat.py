@@ -36,7 +36,6 @@ FRIENDLY_TOOL_NAMES = {
     "finalize_schedule": "Finalizing schedule",
     "delete_schedule": "Deleting schedule draft",
     "get_schedule_stats": "Calculating schedule statistics",
-    "update_preference_json": "Updating preference data",
     "list_all_preferences": "Fetching all preferences",
     "unapprove_preference": "Unapproving preference",
     "delete_preference": "Deleting preference",
