@@ -156,7 +156,7 @@ async def chat_endpoint(request: Request):
         )
 
         try:
-            response = client.models.generate_content(
+            response = await client.aio.models.generate_content(
                 model='gemini-2.5-flash',
                 contents=contents,
                 config=config
@@ -226,7 +226,7 @@ async def chat_endpoint(request: Request):
                     )
 
                 # 4. Ask Gemini for the next response (may call more tools or produce text)
-                response = client.models.generate_content(
+                response = await client.aio.models.generate_content(
                     model='gemini-2.5-flash',
                     contents=contents,
                     config=config

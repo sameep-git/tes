@@ -248,7 +248,14 @@ def trigger_poll_unread_replies(server_mode: bool = False) -> str:
                     "professor_name": f"Prof #{reply['professor_id']}",
                     "reason": f"AI extraction error: {str(extraction_err)[:100]}",
                 })
+                # Add delay after failure to avoid rapid-fire 429s
+                import time
+                time.sleep(4)
                 continue
+
+            # Add delay after success to stay under Vertex AI RPM limit (15 RPM)
+            import time
+            time.sleep(4)
 
             # Reload to get freshly parsed data
             db.refresh(pref)
