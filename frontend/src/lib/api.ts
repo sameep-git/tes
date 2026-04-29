@@ -44,6 +44,7 @@ export interface Section {
     start_time: string | null;
     end_time: string | null;
     status: string;
+    section_number: string | null;
     semester?: string;
     year?: number;
 }
@@ -90,7 +91,7 @@ export interface Preference {
 
 export interface InsightsResponse {
     summary: {
-        hotCourse: { code: string; name: string | null; canonicalKey: string; count: number } | null;
+        trPreferencePercent: number | null;
         peakTime: { label: string; count: number } | null;
         mostAvoidedTime: { label: string; count: number } | null;
         readiness: { approved: number; total: number };
@@ -200,4 +201,21 @@ export async function initializeCourses(semester: string, year: number): Promise
         { method: 'POST' },
     );
     return jsonOrThrow<Course[]>(res);
+}
+
+export async function exportScheduleExcel(scheduleId: number): Promise<void> {
+    const res = await fetch(`${API}/schedules/${scheduleId}/export`);
+    if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    // Extract filename from Content-Disposition header or use a fallback
+    const disposition = res.headers.get('Content-Disposition');
+    const match = disposition?.match(/filename="?(.+?)"?$/);
+    a.download = match?.[1] ?? `Schedule_${scheduleId}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
 }
