@@ -213,7 +213,7 @@ export async function exportScheduleExcel(scheduleId: number): Promise<void> {
     // Extract filename from Content-Disposition header or use a fallback
     const disposition = res.headers.get('Content-Disposition');
     const match = disposition?.match(/filename="?(.+?)"?$/);
-    a.download = match?.[1] ?? `Schedule_${scheduleId}.xlsx`;
+    a.download = match?.[1] ?? `ECON_Schedule_${scheduleId}.xlsx`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

@@ -45,7 +45,11 @@ import {
 // ---------------------------------------------------------------------------
 const SEMESTERS = ['Fall', 'Spring', 'Summer'] as const;
 const currentYear = new Date().getFullYear();
-const YEARS = [2030, 2029, 2028, 2027, 2026, 2025];
+const YEARS: number[] = [];
+const maxYear = Math.max(currentYear + 4, 2030); // Ensures we at least go up to 2030 for now
+for (let y = maxYear; y >= 2025; y--) {
+  YEARS.push(y);
+}
 
 function defaultSemester(): { semester: string; year: number } {
   const month = new Date().getMonth(); // 0-indexed
@@ -923,7 +927,7 @@ export default function Dashboard() {
                     <CardDescription>{schedules.length} schedule(s) for {termLabel}</CardDescription>
                   </div>
                   <div className="flex items-center gap-2">
-                    {schedules.length > 0 && (
+                    {schedules.length > 0 && scheduleView === 'calendar' && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -989,7 +993,18 @@ export default function Dashboard() {
                                 {sched.status}
                               </Badge>
                             </div>
-                            <span className="text-xs text-gray-400">{sched.sections.length} section(s)</span>
+                            <div className="flex items-center gap-4">
+                              <span className="text-xs text-gray-400">{sched.sections.length} section(s)</span>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-3 gap-1.5 text-gray-600 hover:text-gray-900"
+                                onClick={() => exportScheduleExcel(sched.id)}
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                Export Excel
+                              </Button>
+                            </div>
                           </div>
                           {sched.sections.length > 0 && (
                             <Table>

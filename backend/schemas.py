@@ -139,7 +139,7 @@ class SectionResponse(BaseModel):
         from_attributes = True
 
     @classmethod
-    def from_orm_with_relations(cls, section, section_number: str = None):
+    def from_orm_with_relations(cls, section, section_number: Optional[str] = None):
         return cls(
             id=section.id,
             course_id=section.course_id,
