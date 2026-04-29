@@ -191,7 +191,7 @@ def export_schedule_excel(
     wb.save(buffer)
     buffer.seek(0)
 
-    filename = f"{schedule.semester}_{schedule.year}_Schedule.xlsx"
+    filename = f"ECON_Schedule_{schedule.semester}_{schedule.year}.xlsx"
 
     return StreamingResponse(
         buffer,
