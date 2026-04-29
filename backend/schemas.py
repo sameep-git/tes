@@ -122,6 +122,7 @@ class SectionResponse(BaseModel):
     timeslot_id: Optional[int] = None
     room_id: Optional[int] = None
     status: str
+    section_number: Optional[str] = None
     course_code: Optional[str] = None
     course_name: Optional[str] = None
     professor_name: Optional[str] = None
@@ -138,7 +139,7 @@ class SectionResponse(BaseModel):
         from_attributes = True
 
     @classmethod
-    def from_orm_with_relations(cls, section):
+    def from_orm_with_relations(cls, section, section_number: Optional[str] = None):
         return cls(
             id=section.id,
             course_id=section.course_id,
@@ -146,6 +147,7 @@ class SectionResponse(BaseModel):
             timeslot_id=section.timeslot_id,
             room_id=section.room_id,
             status=section.status,
+            section_number=section_number,
             course_code=section.course.code if section.course else None,
             course_name=section.course.name if section.course else None,
             professor_name=section.professor.name if section.professor else None,

@@ -186,7 +186,9 @@ export default function ScheduleCalendar({ sections }: ScheduleCalendarProps) {
                                         }}
                                         onClick={() => setSelectedSection(s)}
                                     >
-                                        <div className="font-bold truncate leading-tight">{s.course_code}</div>
+                                        <div className="font-bold truncate leading-tight">
+                                            {s.course_code}{s.section_number ? `.${s.section_number}` : ''}
+                                        </div>
                                         <div className="truncate opacity-80 leading-tight">{s.professor_name || 'Unassigned'}</div>
                                         {s.room_building && s.room_number && heightPx > 40 && (
                                             <div className="truncate opacity-70 leading-tight mt-0.5">{s.room_building} {s.room_number}</div>
@@ -209,6 +211,11 @@ export default function ScheduleCalendar({ sections }: ScheduleCalendarProps) {
                         </DialogTitle>
                         <DialogDescription>
                             {selectedSection?.course_name}
+                            {selectedSection?.section_number && (
+                                <span className="ml-2 text-xs font-mono bg-gray-100 px-1.5 py-0.5 rounded">
+                                    Section {selectedSection.section_number}
+                                </span>
+                            )}
                         </DialogDescription>
                     </DialogHeader>
 

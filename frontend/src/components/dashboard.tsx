@@ -14,7 +14,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { AlertCircle, CheckCircle2, Clock, Eye, History, Loader2, Save, TrendingUp, Calendar, LayoutList, Trash2, Plus } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock, Download, Eye, History, Loader2, Save, TrendingUp, Calendar, LayoutList, Trash2, Plus } from 'lucide-react';
 import ChatPanel from './chat-panel';
 import { CourseHistoryDialog } from './course-history-dialog';
 import InsightsTab from './insights-tab';
@@ -31,6 +31,7 @@ import {
   approvePreference,
   updatePreferenceParsedJson,
   initializeCourses,
+  exportScheduleExcel,
   type Professor,
   type Course,
   type Schedule,
@@ -44,7 +45,11 @@ import {
 // ---------------------------------------------------------------------------
 const SEMESTERS = ['Fall', 'Spring', 'Summer'] as const;
 const currentYear = new Date().getFullYear();
-const YEARS = [currentYear + 1, currentYear, currentYear - 1];
+const YEARS: number[] = [];
+const maxYear = Math.max(currentYear + 4, 2030); // Ensures we at least go up to 2030 for now
+for (let y = maxYear; y >= 2025; y--) {
+  YEARS.push(y);
+}
 
 function defaultSemester(): { semester: string; year: number } {
   const month = new Date().getMonth(); // 0-indexed
@@ -921,31 +926,44 @@ export default function Dashboard() {
                     <CardTitle>Schedules — {termLabel}</CardTitle>
                     <CardDescription>{schedules.length} schedule(s) for {termLabel}</CardDescription>
                   </div>
-                  <div className="flex bg-gray-100/80 p-1 rounded-md border border-gray-200">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className={`h-7 px-3 gap-1.5 transition-all ${scheduleView === 'list'
-                        ? 'bg-white shadow-sm text-gray-900 hover:bg-white'
-                        : 'text-gray-500 hover:text-gray-700'
-                        }`}
-                      onClick={() => setScheduleView('list')}
-                    >
-                      <LayoutList className="w-3.5 h-3.5" />
-                      List
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className={`h-7 px-3 gap-1.5 transition-all ${scheduleView === 'calendar'
-                        ? 'bg-white shadow-sm text-gray-900 hover:bg-white'
-                        : 'text-gray-500 hover:text-gray-700'
-                        }`}
-                      onClick={() => setScheduleView('calendar')}
-                    >
-                      <Calendar className="w-3.5 h-3.5" />
-                      Calendar
-                    </Button>
+                  <div className="flex items-center gap-2">
+                    {schedules.length > 0 && scheduleView === 'calendar' && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 px-3 gap-1.5 text-gray-600 hover:text-gray-900"
+                        onClick={() => exportScheduleExcel(schedules[0].id)}
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        Export Excel
+                      </Button>
+                    )}
+                    <div className="flex bg-gray-100/80 p-1 rounded-md border border-gray-200">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className={`h-7 px-3 gap-1.5 transition-all ${scheduleView === 'list'
+                          ? 'bg-white shadow-sm text-gray-900 hover:bg-white'
+                          : 'text-gray-500 hover:text-gray-700'
+                          }`}
+                        onClick={() => setScheduleView('list')}
+                      >
+                        <LayoutList className="w-3.5 h-3.5" />
+                        List
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className={`h-7 px-3 gap-1.5 transition-all ${scheduleView === 'calendar'
+                          ? 'bg-white shadow-sm text-gray-900 hover:bg-white'
+                          : 'text-gray-500 hover:text-gray-700'
+                          }`}
+                        onClick={() => setScheduleView('calendar')}
+                      >
+                        <Calendar className="w-3.5 h-3.5" />
+                        Calendar
+                      </Button>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className={`flex-1 min-h-0 ${scheduleView === 'calendar' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
@@ -975,7 +993,18 @@ export default function Dashboard() {
                                 {sched.status}
                               </Badge>
                             </div>
-                            <span className="text-xs text-gray-400">{sched.sections.length} section(s)</span>
+                            <div className="flex items-center gap-4">
+                              <span className="text-xs text-gray-400">{sched.sections.length} section(s)</span>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-3 gap-1.5 text-gray-600 hover:text-gray-900"
+                                onClick={() => exportScheduleExcel(sched.id)}
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                Export Excel
+                              </Button>
+                            </div>
                           </div>
                           {sched.sections.length > 0 && (
                             <Table>
@@ -991,7 +1020,9 @@ export default function Dashboard() {
                               <TableBody>
                                 {sched.sections.map(sec => (
                                   <TableRow key={sec.id}>
-                                    <TableCell className="font-medium">{sec.course_code} — {sec.course_name}</TableCell>
+                                    <TableCell className="font-medium">
+                                      {sec.course_code}{sec.section_number ? `.${sec.section_number}` : ''} — {sec.course_name}
+                                    </TableCell>
                                     <TableCell>{sec.professor_name ?? <span className="text-gray-300">Unassigned</span>}</TableCell>
                                     <TableCell>{sec.timeslot_label ?? <span className="text-gray-300">TBD</span>}</TableCell>
                                     <TableCell>

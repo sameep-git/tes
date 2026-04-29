@@ -176,16 +176,16 @@ export default function InsightsTab({ semester, year, courses, chatWidth = 450 }
 
                 <Card>
                     <CardHeader className="pb-2">
-                        <CardDescription className="text-xs uppercase font-semibold">Hot Course</CardDescription>
+                        <CardDescription className="text-xs uppercase font-semibold">T/Th Preference</CardDescription>
                     </CardHeader>
                     <CardContent>
                         <div className="flex items-center justify-between">
-                            <span className="text-xl font-bold truncate pr-2" title={data!.summary.hotCourse?.name || undefined}>
-                                {data!.summary.hotCourse?.code || '—'}
+                            <span className="text-xl font-bold truncate pr-2">
+                                {data!.summary.trPreferencePercent != null ? `${data!.summary.trPreferencePercent}%` : '—'}
                             </span>
-                            <TrendingUp className="text-red-500 flex-shrink-0" />
+                            <TrendingUp className="text-blue-500 flex-shrink-0" />
                         </div>
-                        <p className="text-xs text-gray-500 mt-1">{data!.summary.hotCourse?.count || 0} professors requested this</p>
+                        <p className="text-xs text-gray-500 mt-1">of professors prefer T/Th</p>
                     </CardContent>
                 </Card>
 

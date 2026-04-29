@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api/insights", tags=["insights"])
 logger = logging.getLogger(__name__)
 
 class InsightSummary(BaseModel):
-    hotCourse: Optional[Dict[str, Any]] = None
+    trPreferencePercent: Optional[int] = None
     peakTime: Optional[Dict[str, Any]] = None
     mostAvoidedTime: Optional[Dict[str, Any]] = None
     readiness: Dict[str, int]
@@ -80,8 +80,13 @@ def get_insights(
     
     all_timeslots = {t.label: t for t in db.query(models.TimeSlot).all()}
 
+    tr_pref_profs = 0
+    total_approved_profs = 0
+
     for (parsed_json,) in approved_prefs_data:
+        total_approved_profs += 1
         data = parsed_json or {}
+        prof_prefers_tr = False
 
         # ── Course preferences ────────────────────────────────────────────────
         # New format: course_assignments [{course, timeslot}, ...]
@@ -96,6 +101,8 @@ def get_insights(
                     ts_label = entry.get("timeslot") if isinstance(entry, dict) else None
                     if ts_label and ts_label in all_timeslots:
                         ts_pref_counter[ts_label] += 1
+                        if "TR" in all_timeslots[ts_label].days or all_timeslots[ts_label].days == "TR":
+                            prof_prefers_tr = True
         else:
             # Legacy format fallback
             for c in data.get("preferred_courses", []):
@@ -103,6 +110,11 @@ def get_insights(
             for ts_label in data.get("preferred_timeslots", []):
                 if ts_label in all_timeslots:
                     ts_pref_counter[ts_label] += 1
+                    if "TR" in all_timeslots[ts_label].days or all_timeslots[ts_label].days == "TR":
+                        prof_prefers_tr = True
+
+        if prof_prefers_tr:
+            tr_pref_profs += 1
 
         for c in data.get("avoid_courses", []):
             course_avoid_counter[c] += 1
@@ -174,18 +186,9 @@ def get_insights(
     ts_insights.sort(key=lambda x: (x.startTime, x.days))
     
     # Summary Highlights
-    hot_course = None
-    if course_pref_counter:
-        top_key, top_count = course_pref_counter.most_common(1)[0]
-        parts = top_key.split(" | ")
-        display_code = parts[0]
-        display_name = parts[1] if len(parts) > 1 else None
-        hot_course = {
-            "code": display_code, 
-            "name": display_name,
-            "canonicalKey": top_key,
-            "count": top_count
-        }
+    tr_percent = None
+    if total_approved_profs > 0:
+        tr_percent = int((tr_pref_profs / total_approved_profs) * 100)
         
     peak_time = None
     if ts_pref_counter:
@@ -199,7 +202,7 @@ def get_insights(
 
     return InsightsResponse(
         summary=InsightSummary(
-            hotCourse=hot_course,
+            trPreferencePercent=tr_percent,
             peakTime=peak_time,
             mostAvoidedTime=avoided_time,
             readiness={"approved": approved_count, "total": total_active}
