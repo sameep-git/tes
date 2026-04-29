@@ -377,7 +377,7 @@ function PreferenceDetailDialog({
                 <ReadonlyField 
                   label="Course Assignments" 
                   value={((parsed.course_assignments as any[]) || []).map(a => 
-                    `${a.course.split(' | ')[0]} ${a.timeslot ? `(${a.timeslot})` : '(Any time)'}`
+                    `${(a.course || "Unknown Course").split(' | ')[0]} ${a.timeslot ? `(${a.timeslot})` : '(Any time)'}`
                   )} 
                 />
                 <ReadonlyField label="Avoid Courses" value={parsed.avoid_courses as string[]} />

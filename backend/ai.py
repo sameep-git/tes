@@ -15,6 +15,7 @@ try:
         vertexai=True,
         project=os.getenv("VERTEX_PROJECT_ID"),
         location=os.getenv("VERTEX_LOCATION", "us-central1"),
+        http_options={"timeout": 120_000},  # 120s in milliseconds — prevents indefinite hangs
     )
 except Exception:
     client = None

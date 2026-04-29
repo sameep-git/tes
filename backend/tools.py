@@ -188,15 +188,25 @@ def trigger_poll_unread_replies(server_mode: bool = False) -> str:
       3. Auto-approve preferences where confidence >= 0.85, on_leave=False, no admin notes
          (lower-confidence or flagged prefs stay pending for human review)
     """
+    import sys
+
+    print("[POLL-TRIGGER] Starting email poll...", flush=True)
     replies = poll_unread_replies(server_mode=server_mode)
+    print(f"[POLL-TRIGGER] poll_unread_replies returned {len(replies)} reply(ies).", flush=True)
 
     auto_extracted = []
     auto_approved = []
     needs_review = []
 
-    for reply in replies:
+    for idx, reply in enumerate(replies, 1):
         if "error" in reply or "professor_id" not in reply:
+            print(f"[POLL-TRIGGER] Reply {idx}/{len(replies)} skipped (error or no professor_id): {reply.get('error', 'missing professor_id')}", flush=True)
             continue
+
+        prof_id = reply["professor_id"]
+        sem = reply.get("semester", "?")
+        yr = reply.get("year", "?")
+        print(f"[POLL-TRIGGER] Reply {idx}/{len(replies)}: prof_id={prof_id}, {sem} {yr}", flush=True)
 
         db = SessionLocal()
         try:
@@ -206,11 +216,46 @@ def trigger_poll_unread_replies(server_mode: bool = False) -> str:
                 Preference.year == reply["year"],
             ).first()
             if not pref:
+                print(f"[POLL-TRIGGER]   No Preference record found — skipping.", flush=True)
                 continue
 
-            # Step 2: Auto-extract
-            extraction_result_str = extract_and_save_preference_json(pref.id)
-            auto_extracted.append({"preference_id": pref.id, "extraction": extraction_result_str})
+            print(f"[POLL-TRIGGER]   Preference #{pref.id} found. raw_email length={len(pref.raw_email or '')}. Starting AI extraction...", flush=True)
+
+            # Step 2: Auto-extract with a timeout so one stuck Vertex AI
+            # call doesn't block all 17 emails forever.
+            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+            EXTRACTION_TIMEOUT_SECONDS = 60
+
+            try:
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(extract_and_save_preference_json, pref.id)
+                    extraction_result_str = future.result(timeout=EXTRACTION_TIMEOUT_SECONDS)
+
+                print(f"[POLL-TRIGGER]   AI extraction complete for pref #{pref.id}.", flush=True)
+                auto_extracted.append({"preference_id": pref.id, "extraction": extraction_result_str})
+            except FuturesTimeout:
+                print(f"[POLL-TRIGGER]   ⚠ AI extraction TIMED OUT for pref #{pref.id} after {EXTRACTION_TIMEOUT_SECONDS}s — skipping.", flush=True)
+                needs_review.append({
+                    "preference_id": pref.id,
+                    "professor_name": f"Prof #{reply['professor_id']}",
+                    "reason": "AI extraction timed out",
+                })
+                continue
+            except Exception as extraction_err:
+                print(f"[POLL-TRIGGER]   ⚠ AI extraction FAILED for pref #{pref.id}: {extraction_err}", flush=True)
+                needs_review.append({
+                    "preference_id": pref.id,
+                    "professor_name": f"Prof #{reply['professor_id']}",
+                    "reason": f"AI extraction error: {str(extraction_err)[:100]}",
+                })
+                # Add delay after failure to avoid rapid-fire 429s
+                import time
+                time.sleep(4)
+                continue
+
+            # Add delay after success to stay under Vertex AI RPM limit (15 RPM)
+            import time
+            time.sleep(4)
 
             # Reload to get freshly parsed data
             db.refresh(pref)
@@ -1368,6 +1413,81 @@ def delete_preference(pref_id: int) -> str:
         db.close()
 
 
+def bulk_delete_preferences(
+    semester: str,
+    year: int,
+    approved: Optional[bool] = None,
+    dry_run: bool = True,
+) -> str:
+    """
+    Bulk-delete preference records for a term, optionally filtered by approval state.
+    Defaults to dry_run=True so destructive chat requests can be previewed first.
+    """
+    semester = semester.capitalize() if semester else semester
+    db = SessionLocal()
+    try:
+        query = db.query(Preference).filter(
+            Preference.semester == semester,
+            Preference.year == year,
+        )
+        if approved is not None:
+            query = query.filter(Preference.admin_approved == approved)
+
+        prefs = query.order_by(Preference.received_at.desc(), Preference.id.desc()).all()
+        pref_ids = [pref.id for pref in prefs]
+        professor_ids = {pref.professor_id for pref in prefs}
+
+        professors = db.query(Professor).filter(Professor.id.in_(professor_ids)).all() if professor_ids else []
+        professor_names = {prof.id: prof.name for prof in professors}
+
+        matches = [
+            {
+                "preference_id": pref.id,
+                "professor_id": pref.professor_id,
+                "professor_name": professor_names.get(pref.professor_id, f"Prof #{pref.professor_id}"),
+                "admin_approved": pref.admin_approved,
+                "received_at": pref.received_at.isoformat() if pref.received_at else None,
+            }
+            for pref in prefs
+        ]
+
+        filter_label = (
+            "approved only" if approved is True
+            else "unapproved only" if approved is False
+            else "all preferences"
+        )
+
+        if dry_run:
+            return json.dumps({
+                "status": "preview",
+                "semester": semester,
+                "year": year,
+                "filter": filter_label,
+                "match_count": len(matches),
+                "matches": matches,
+                "message": f"Preview only. {len(matches)} {filter_label} would be deleted for {semester} {year}.",
+            })
+
+        for pref in prefs:
+            db.delete(pref)
+        db.commit()
+
+        return json.dumps({
+            "status": "success",
+            "semester": semester,
+            "year": year,
+            "filter": filter_label,
+            "deleted_count": len(matches),
+            "deleted_preference_ids": pref_ids,
+            "message": f"Deleted {len(matches)} {filter_label} for {semester} {year}.",
+        })
+    except Exception as e:
+        db.rollback()
+        return json.dumps({"error": str(e)})
+    finally:
+        db.close()
+
+
 # =========================================================================
 # Timeslot tools
 # =========================================================================
@@ -1660,7 +1780,7 @@ ALL_TOOLS = [
     approve_preference,
     unapprove_preference,
     delete_preference,
-    update_preference_json,
+    bulk_delete_preferences,
     # Solver & schedules
     run_preflight_checks,
     trigger_solver,

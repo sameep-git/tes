@@ -36,10 +36,10 @@ FRIENDLY_TOOL_NAMES = {
     "finalize_schedule": "Finalizing schedule",
     "delete_schedule": "Deleting schedule draft",
     "get_schedule_stats": "Calculating schedule statistics",
-    "update_preference_json": "Updating preference data",
     "list_all_preferences": "Fetching all preferences",
     "unapprove_preference": "Unapproving preference",
     "delete_preference": "Deleting preference",
+    "bulk_delete_preferences": "Cleaning up preferences",
     "list_timeslots": "Fetching timeslots",
     "toggle_timeslot": "Updating timeslot status",
     "get_email_log": "Checking email history",
@@ -58,6 +58,7 @@ try:
         vertexai=True,
         project=os.getenv("VERTEX_PROJECT_ID"),
         location=os.getenv("VERTEX_LOCATION", "us-central1"),
+        http_options={"timeout": 120_000},
     )
 except Exception:
     client = None
@@ -106,6 +107,8 @@ You have access to tools for:
 ### Data Integrity
 12. Use `deactivate_professor` (soft delete) — professors may appear in historical schedules.
 13. `delete_course` will refuse if sections reference it — explain this clearly to the user.
+14. For bulk destructive preference cleanup by term or status, prefer `bulk_delete_preferences`.
+15. For destructive actions, preview first when the tool supports `dry_run`, then confirm before executing.
 
 ### Communication Style
 - Be concise and professional.
@@ -113,6 +116,36 @@ You have access to tools for:
 - Summarize tool results in plain language — never dump raw JSON at the user.
 - Confirm destructive actions (deletes, deactivation) before proceeding.
 """
+
+
+def _friendly_chat_error_message(error: Exception) -> str:
+    raw_message = str(error)
+    status_code = getattr(error, "status_code", None)
+    response_json = getattr(error, "response_json", None) or {}
+    error_payload = response_json.get("error", {}) if isinstance(response_json, dict) else {}
+    provider_status = error_payload.get("status")
+    provider_message = error_payload.get("message", raw_message)
+
+    if status_code == 429 or provider_status == "RESOURCE_EXHAUSTED":
+        return (
+            "The request completed as far as the system could take it, but Vertex AI is rate-limited right now, "
+            "so the agent could not generate its final response. Please wait a moment and try again."
+        )
+
+    if status_code == 400 and provider_status == "INVALID_ARGUMENT":
+        if "number of function response parts is equal to the number of function call parts" in provider_message:
+            return (
+                "The agent hit a tool-calling protocol error before it could finish the request. "
+                "No further automated action was completed in that step. "
+                "Please retry the request. If this was a bulk action, try wording it explicitly, for example: "
+                "`preview delete all unapproved preferences for Fall 2027`."
+            )
+        return (
+            "The agent sent an invalid tool request to Vertex AI and could not finish the step. "
+            "Please retry the request."
+        )
+
+    return provider_message
 
 # -------------------------------------------------------------------------
 # Streaming API Endpoint
@@ -155,7 +188,7 @@ async def chat_endpoint(request: Request):
         )
 
         try:
-            response = client.models.generate_content(
+            response = await client.aio.models.generate_content(
                 model='gemini-2.5-flash',
                 contents=contents,
                 config=config
@@ -172,6 +205,8 @@ async def chat_endpoint(request: Request):
                 # to avoid duplicating the same model message in context when Gemini
                 # returns multiple parallel tool calls in a single response.
                 contents.append(response.candidates[0].content)
+
+                function_response_parts = []
 
                 for function_call in response.function_calls:
                     tool_name = function_call.name
@@ -212,20 +247,25 @@ async def chat_endpoint(request: Request):
                     else:
                         tool_result = json.dumps({"error": f"Tool {tool_name} not found."})
 
-                    # 3. Each tool response is its own Content block — Gemini requires
-                    # one Content per function response, not batched into one block.
-                    contents.append(
-                        types.Content(
-                            role="tool",
-                            parts=[types.Part.from_function_response(
-                                name=tool_name,
-                                response={"result": tool_result}
-                            )]
+                    function_response_parts.append(
+                        types.Part.from_function_response(
+                            name=tool_name,
+                            response={"result": tool_result}
                         )
                     )
 
+                # Return one tool turn containing one function-response part for
+                # each function call from the prior model turn. This keeps the
+                # request/response part counts aligned for parallel tool calls.
+                contents.append(
+                    types.Content(
+                        role="tool",
+                        parts=function_response_parts
+                    )
+                )
+
                 # 4. Ask Gemini for the next response (may call more tools or produce text)
-                response = client.models.generate_content(
+                response = await client.aio.models.generate_content(
                     model='gemini-2.5-flash',
                     contents=contents,
                     config=config
@@ -255,7 +295,7 @@ async def chat_endpoint(request: Request):
             error_trace = traceback.format_exc()
             print("FATAL CHAT ERROR:", error_trace, file=sys.stderr)
             sys.stderr.flush()
-            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'content': _friendly_chat_error_message(e)})}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
